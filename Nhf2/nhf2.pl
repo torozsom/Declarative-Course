@@ -116,20 +116,32 @@ fill_path([pos(R, C)|Rest], Matrix, RowNeeds, ColNeeds, RowSpaces, ColSpaces, Ne
     set_nth(ColSpaces, C, ColSpaceAfter, ColSpacesUpdated),
     nth1(R, Matrix, Row),
     nth1(C, Row, Cell),
-    process_cell(Cell, R, C, RowNeeds, ColNeeds, RowSpaceAfter, ColSpaceAfter, Next, M,
+    process_cell(Cell, R, C, RowNeeds, ColNeeds,
+                 RowSpaceBefore, RowSpaceAfter,
+                 ColSpaceBefore, ColSpaceAfter,
+                 Next, M,
                  RowNeedsNext, ColNeedsNext, NextValue),
     fill_path(Rest, Matrix, RowNeedsNext, ColNeedsNext, RowSpacesUpdated, ColSpacesUpdated, NextValue, M).
 
-process_cell(Cell, R, C, RowNeeds, ColNeeds, RowSpaceAfter, ColSpaceAfter, Next, M,
+process_cell(Cell, R, C, RowNeeds, ColNeeds,
+             RowSpaceBefore, RowSpaceAfter,
+             ColSpaceBefore, ColSpaceAfter,
+             Next, M,
              RowNeedsNext, ColNeedsNext, NextOut) :-
+    nth1(R, RowNeeds, RowNeedList),
+    length(RowNeedList, RowNeedLen),
+    nth1(C, ColNeeds, ColNeedList),
+    length(ColNeedList, ColNeedLen),
     (   var(Cell)
-    ->  (   expected_value(Next, M, Expected),
-            remove_need(RowNeeds, R, Expected, RowNeedsMid),
-            ensure_capacity(RowNeedsMid, R, RowSpaceAfter),
-            remove_need(ColNeeds, C, Expected, ColNeedsMid),
-            ensure_capacity(ColNeedsMid, C, ColSpaceAfter),
-            Cell = Expected,
-            Next1 is Next + 1,
+    ->  (   forced_number(RowNeedLen, RowSpaceBefore, ColNeedLen, ColSpaceBefore)
+        ->  place_expected(Cell, R, C, RowNeeds, ColNeeds,
+                           RowSpaceAfter, ColSpaceAfter,
+                           Next, M,
+                           RowNeedsNext, ColNeedsNext, NextOut)
+        ;   place_expected(Cell, R, C, RowNeeds, ColNeeds,
+                           RowSpaceAfter, ColSpaceAfter,
+                           Next, M,
+                           RowNeedsMid, ColNeedsMid, Next1),
             RowNeedsNext = RowNeedsMid,
             ColNeedsNext = ColNeedsMid,
             NextOut = Next1
@@ -143,20 +155,33 @@ process_cell(Cell, R, C, RowNeeds, ColNeeds, RowSpaceAfter, ColSpaceAfter, Next,
     ;   Cell = 0
     ->  ensure_capacity(RowNeeds, R, RowSpaceAfter),
         ensure_capacity(ColNeeds, C, ColSpaceAfter),
+        \+ forced_number(RowNeedLen, RowSpaceBefore, ColNeedLen, ColSpaceBefore),
         RowNeedsNext = RowNeeds,
         ColNeedsNext = ColNeeds,
         NextOut = Next
-    ;   expected_value(Next, M, Expected),
-        Cell = Expected,
-        remove_need(RowNeeds, R, Expected, RowNeedsMid),
-        ensure_capacity(RowNeedsMid, R, RowSpaceAfter),
-        remove_need(ColNeeds, C, Expected, ColNeedsMid),
-        ensure_capacity(ColNeedsMid, C, ColSpaceAfter),
-        Next1 is Next + 1,
-        RowNeedsNext = RowNeedsMid,
-        ColNeedsNext = ColNeedsMid,
-        NextOut = Next1
+    ;   place_expected(Cell, R, C, RowNeeds, ColNeeds,
+                       RowSpaceAfter, ColSpaceAfter,
+                       Next, M,
+                       RowNeedsNext, ColNeedsNext, NextOut)
     ).
+
+forced_number(RowNeedLen, RowSpaceBefore, ColNeedLen, ColSpaceBefore) :-
+    RowNeedLen =:= RowSpaceBefore ;
+    ColNeedLen =:= ColSpaceBefore.
+
+place_expected(Cell, R, C, RowNeeds, ColNeeds,
+               RowSpaceAfter, ColSpaceAfter,
+               Next, M,
+               RowNeedsNext, ColNeedsNext, NextOut) :-
+    expected_value(Next, M, Expected),
+    Cell = Expected,
+    remove_need(RowNeeds, R, Expected, RowNeedsMid),
+    ensure_capacity(RowNeedsMid, R, RowSpaceAfter),
+    remove_need(ColNeeds, C, Expected, ColNeedsMid),
+    ensure_capacity(ColNeedsMid, C, ColSpaceAfter),
+    NextOut is Next + 1,
+    RowNeedsNext = RowNeedsMid,
+    ColNeedsNext = ColNeedsMid.
 
 remove_need(Needs, Index, Value, UpdatedNeeds) :-
     nth1(Index, Needs, NeedList),
