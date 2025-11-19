@@ -1,0 +1,179 @@
+A számtekercs feladvány
+A kis házi feladat a nagy házi feladathoz (Nhf1) kapcsolódik, ezért először ezt ismertetjük.
+
+Adott egy n*n mezőből álló, négyzet alakú tábla, amelynek egyes mezőiben 1 és m közötti számok vannak. A feladat az, hogy további 1 és m közötti számokat helyezzünk el a táblában úgy, hogy az alábbi feltételek teljesüljenek:
+Minden sorban és minden oszlopban az 1..m számok mindegyike pontosan egyszer szerepel.
+A bal felső sarokból induló tekeredő vonal mentén a számok rendre az 1,2,...m,1,2,...,m,... sorrendben követik egymást.
+A tekeredő vonalat a következőképpen definiáljuk. Először a négyzet első sorában haladunk balról jobbra, majd az utolsó oszlopban felülről lefelé. Ezután az utolsó sorban megyünk jobbról balra, majd az első oszlopban alulról fölfelé, egészen a 2. sor 1. mezőjéig. Miután így bejártuk a négyzetes tábla szélső sorait és oszlopait, rekurzívan folytatjuk a bejárást a 2. sor 2. mezőjében kezdődő (n-2)*(n-2) mezőből álló négyzettel.
+Az 1. ábra egy feladványt ábrázol, a 2. ábra ennek (egyetlen) megoldását mutatja.
+
+1. ábra. Egy feladvány (n=6, m=3):
+
+-----------------------\
+                  2     |
+/-------------------\   |
+|     1             |   |
+|   /-----------\   |   |
+|   |           |   |   |
+|   |   /---\   |   |   |
+|   |   |       |   | 1 |
+|   |   \-------/   |   |
+|   |               |   |
+|   \---------------/   |
+|                       |
+\-----------------------/
+           	
+2. ábra. A feladvány megoldása:
+
+-----------------------\
+  1   -   -   -   2   3 |
+/-------------------\   |
+| -   1   2   3   - | - |
+|   /-----------\   |   |
+| - | 3   1   2 | - | - |
+|   |   /---\   |   |   |
+| - | 2 | 3   - | - | 1 |
+|   |   \-------/   |   |
+| 3 | -   -   -   1 | 2 |
+|   \---------------/   |
+| 2   -   -   1   3   - |
+\-----------------------/
+	           	
+Ebben a feladatban az alábbi Prolog predikátumot kell megírni:
+
+kizarasos_szukites(+FLeiro, +Mx0, -Mx, -Szukites) – az FLeiro feladványleíró által specifikált feladvány Mx0 megoldási állapotán elvégez egy kizáráson alapuló szűkítést, előállitva ezzel egy Mx új megoldási állapotot és egy Szukites struktúrát, amely az alkalmazott szűkítés paramétereit írja le.
+A részletes leírást és a formális specifikációt lejjebb találja.
+A jelen félév Prolog házi feladataiban egy, a számtekercsnek megfelelő méretű négyzetes mátrixot kell kezelni. Ennek a következő Prolog adatstruktúrát feleltetjük meg: a mátrixot sorok listájaként ábrázoljuk, ahol az egyes sorok a mátrix elemeiből álló listák. A mátrix minden egyes eleme egy tartományt határoz meg, amely a mátrix adott pozíciójában megengedett értékek halmazának felel meg. Egy ilyen tartományt egy egészekből álló, szigorúan növekvő nem-üres listával ábrázolunk. Hatékonysági okokból az egyelemű listák esetében egy alternatív ábrázolást is bevezetünk: az [I] egyelemű tartományt az I egész számmal is jelölhetjük.
+
+A megírandó eljárás paramétereinek típusát a következő – megjegyzésként megadott – Prolog-típusdefiníciók írják le. A "t_" előtag arra utal, hogy (listaként ábrázolt) tartományokból álló mátrixról, sorról stb. van szó.
+
+Típusdefiníciók
+
+% :- type feladvany_leiro ---> szt(meret,ciklus,list(adott_elem)).
+% :- type meret             == integer.
+% :- type ciklus            == integer.
+% :- type adott_elem      ---> i(sorszam,oszlopszam,ertek).
+% :- type sorszam           == integer.
+% :- type oszlopszam        == integer.
+% :- type ertek             == integer.
+
+% :- type t_matrix          == list(t_sor).
+% :- type t_sor             == list(t_ertek).
+% :- type t_ertek           == list(integer) \/ integer.  % egészek listája vagy egész
+
+% :- type szukites        ---> sor(sorszam,ertek) ; oszl(oszlopszam,ertek) ; nem.
+
+% :- pred kizarasos_szukites(feladvany_leiro::in,
+                              t_matrix::in, 
+                              t_matrix::out, 
+                              szukites::out).
+
+A feladvany_leiro adatstruktúra megegyezik a nagy házi feladat specifikációjában szereplő azonos nevű struktúrával.
+
+A feladat ismertetése
+
+A feladatban megírandó predikátum a kizarasos_szukites(FLeiro, Mx0, Mx, Szukites) Prolog-eljárás. Az eljárás első, bemenő paramétere (FLeiro) egy feladványleíró, ebből az szt(n,m,...) struktúrából itt csak az első két argumentum bír jelentőséggel, a harmadik argumentumot ebben az eljárásban nem szabad figyelembe venni! Az eljárás második, bemenő paramétere (Mx0) egy n*n méretű négyzetes mátrix, amelynek minden eleme vagy egy egész szám, vagy egy szigorúan növekvő nem-üres egészlista. A mátrixban előforduló minden egésznek a 0, 1, ..., m intervallumba kell tartoznia. Az eljárás feladata, hogy – az alább specifikált módon – próbálja meg szűkíteni a mátrix elemeit, azaz próbáljon értékeket elhagyni a mátrixelemként előforduló listákból. Ha ez nem lehetséges, azaz nincs elhagyható érték, akkor az eljárás hiúsuljon meg. Ha a szűkítési folyamat során kiderül, hogy a feladatnak nincs megoldása, akkor ezt az Mx = [] behelyettesítéssel kell jelezni. Minden egyéb esetben az Mx kimenő paraméterben kell visszaadni az Mx0 szűkítésével előállított mátrixot, a Szukites kimenő paraméterben jelezve az alkalmazott szűkítés jellegét.
+
+A kizarasos_szukites/4 eljárás megírása során feltételezheti, hogy az Mx0 bemenő paraméterre az 5. kis házi feladatban elvárt szűkítések már nem alkalmazhatók (például azért, mert a kizarasos_szukites/4 eljárás Mx0 bemenete az ismert_szukites/3 eljárás kimeneteként állt elő). Ez pl. azt jelenti, hogy az Mx0 mátrixban nem lehet egyelemű lista (mert azt az ismert_szukites/3 egy egész számmal helyettesítette volna), továbbá ha az Mx0 mátrix j-edik sorának k-adik eleme egy e egész, akkor e nem fordulhat elő sem a j-edik sorban, sem a k-adik oszlopban sehol másutt (mert az ismert_szukites/3 az e számnak minden más adott sor- ill. oszlopbeli előfordulását elhagyta volna a mátrixból).
+A kizárásos szűkítés leírása
+A mátrix soraira és oszlopaira együtt a vonal gyűjtőnéven hivatkozunk, ezek minden egyes eleme egy tartomány (amit vagy egy egészlistával, vagy egy egész számmal ábrázolunk). Azt mondjuk, hogy egy vonal egy eleme felvehet egy E számértéket, ha a vonal adott eleme az E egész, vagy egy olyan lista, amely E-t tartalmazza.
+
+Legyen z = n-m, azaz a 0 értékek száma minden egyes vonalban. A kizarasos_szukites/4 eljárásban az alább meghatározott sorrendben kell keresnünk egyetlen egy vonalat (tehát vagy egy sort, vagy egy oszlopot) és egy a 0..m intervallumba eső E számot, hogy egy szűkítést tudjunk végrehajtani az adott vonalon, az adott E értékhez kapcsolódóan.
+
+A vonalak vizsgálatakor először növekvő sorindex szerint a sorokat, majd növekvő oszlopindex szerint az oszlopokat kell számba venni; egy adott vonal esetén az E értékeket növekvő sorrendben kell vizsgálni.
+
+Ha adott egy vonal és egy E érték, akkor először gyűjtsük ki a vonal mindazon elemeit, amelyek felvehetik az E értéket, legyen ezek száma cnt. Ha cnt nem 0, akkor kikötjük, hogy a kigyűjtött elemek között legyen legalább egy, amely lista (és nem szám). A kizarasos_szukites/4 eljárástól akkor várunk el szűkítést, ha fennáll az alábbi feltételek egyike:
+
+az E = 0 esetben cnt ≤ z;
+az E > 0 esetben cnt ≤ 1.
+
+Vegyük észre, hogy mindkét esetben a szóbanforgó értékek elvárt előfordulás-száma áll a jobboldalon: a nullákból z példány, a pozitív számértékekből pedig 1-1 példány kell legyen minden sorban és oszlopban.
+Ha a fenti két feltétel egyike sem teljesül Mx semelyik vonalára, akkor az eljárás hiúsuljon meg, ezzel jelezve, hogy nincs alkalmazható szűkítés.
+
+A kizárásos szűkítés algoritmusa
+Tegyük fel tehát, hogy a megadott sorrend szerint megtaláltuk az első vonalat és a 0 és m közé eső legkisebb E egész számot, amelyekre teljesül a fenti 1. és 2. feltételek egyike. Ebben az esetben a következő szűkítést kell elvégezni:
+
+Ha E = 0, akkor
+ha a vonalon z-nél kevesebb elem veheti fel a 0 értéket, akkor az Mx = [], Szukites = nem behelyettesítésekkel lépünk ki az eljárásból, jelezve, hogy a feladatnak nincs megoldása;
+egyébként – amikor is a 0 értéket pontosan z elem veheti fel az adott vonalon – a vonal minden olyan listaként ábrázolt tartományát, amely 0 értéket tartalmaz, egy [0] egyelemű listával ábrázolt tartományra szűkítjük; végül a Szukites kimenő paraméterben megadjuk az elvégzett szűkítés adatait, pl. ha a 4. oszlopban sikerült az összes 0 helyét meghatározni, akkor ezt a Szukites = oszl(4,0) behelyettesítéssel jelezzük.
+
+Ha E > 0, akkor
+ha az adott vonalon egy elem sem veheti fel az E értéket, akkor az Mx = [], Szukites = nem behelyettesítésekkel lépünk ki az eljárásból, jelezve, hogy a feladatnak nincs megoldása;
+egyébként az E érték pontosan egy pozícióban fordul elő az adott vonalon (nevezzük ezt az i-edik pozíciónak); ekkor a vonal i-edik pozícióját az [E] egyelemű listára szűkítjük, majd a szűkítés adatait az előző esethez hasonlóan adjuk ki: pl. ha az 5. sorban a 3-as érték pozícióját határoztuk meg, akkor ezt a Szukites = sor(5,3) behelyettesítéssel jelezzük.
+Fontos tudnivaló, hogy a feladat megoldásában pontosan a fent leírt lépéseket kell a megadott sorrendben elvégezni, és csak egyetlen egy vonalra (sorra vagy oszlopra, de nem mindkettőre) szabad a fenti szűkítési folyamatot elvégezni.
+
+Példák
+
+| ?- kizarasos_szukites(szt(3,2,[]),   [[[1,2],[1,2],       0],
+                                        [[1,2],[0,1,2], [1,2]],
+                                        [0,    [1,2],   [1,2]]], Mx, Sz).
+Mx =  [[[1,2],[1,2],0    ],
+       [[1,2],[0],  [1,2]],
+       [0,    [1,2],[1,2]]],
+Sz = sor(2,0) ? ;
+no
+| ?- kizarasos_szukites(szt(3,2,[]),   [[[1,2],[1,2],   [1,2]],
+                                        [[1,2],[0,1,2], [1,2]],
+                                        [0,    [1,2],   [1,2]]], Mx, Sz).
+Mx = [], Sz = nem ? ;
+no
+| ?- kizarasos_szukites(szt(3,2,[]),   [[[1,2],[1,2],   [0,2]],
+                                        [[1,2],[0,1,2], [1,2]],
+                                        [0,    [1,2],   [1,2]]], Mx, Sz).
+Mx =  [[[1,2],[1,2],  [0]  ],
+       [[1,2],[0,1,2],[1,2]],
+       [0,    [1,2],  [1,2]]],
+Sz = sor(1,0) ? ;
+no
+| ?- kizarasos_szukites(szt(3,2,[]), [[[0,1,2],[1,2],   [0,2]  ],
+                                      [[1,2],  [0,1,2], [0,1,2]],
+                                      [[0,1],  [0,1,2], [0,1,2]]], Mx, Sz).
+no
+| ?- kizarasos_szukites(szt(3,2,[]), [[[0,1,2],[1,2],   [0,2]  ],
+                                      [[1,2],  [0,1,2], [0,1,2]],
+                                      [[0,1],  [1,2],   [1,2]  ]], Mx, Sz).
+Mx =  [[[0,1,2],[1,2],  [0,2]  ],
+       [[1,2],  [0,1,2],[0,1,2]],
+       [[0],    [1,2],  [1,2]  ]],
+Sz = sor(3,0) ? ;
+no
+| ?- kizarasos_szukites(szt(3,2,[]), [[[0,1,2],[1,2],   [0,2]  ],
+                                      [[1,2],  [0,1,2], [0,1,2]],
+                                      [[0,1],  [1,2],   [0,1,2]]], Mx, Sz).
+Mx =  [[[0,1,2],[1,2],  [0,2]  ],
+       [[1,2],  [0],    [0,1,2]],
+       [[0,1],  [1,2],  [0,1,2]]],
+Sz = oszl(2,0) ? ;
+no
+| ?- kizarasos_szukites(szt(3,2,[]), [[[0,1],  [0,1],   [0,1,2]],
+                                      [[1,2],  [0,1,2], [0,1,2]],
+                                      [[0,1],  [1,2],   [0,1,2]]], Mx, Sz).
+Mx =  [[[0,1],  [0,1],  [2]    ],
+       [[1,2],  [0,1,2],[0,1,2]],
+       [[0,1],  [1,2],  [0,1,2]]],
+Sz = sor(1,2) ? ;
+no
+| ?- kizarasos_szukites(szt(4,2,[]), [[[0,1,2],[0,1,2], [0,1,2], [0,1,2]],
+                                      [[1,2],  [0,1,2], [0,1,2], [0,1,2]],
+                                      [[0,1,2],[0,2],   [1,2],   [0,1,2]],
+                                      [[0,1,2],[0,1,2], [0,1,2], [0,1,2]]],
+                                      Mx, Sz).
+no
+| ?- kizarasos_szukites(szt(4,2,[]), [[[1,2],  [0,1,2], [1,2],   [1,2]  ],
+                                      [[1,2],  [0,1,2], [0,1,2], [0,1,2]],
+                                      [[0,1,2],[0,2],   [1,2],   [0,1,2]],
+                                      [[0,1,2],[0,1,2], [0,1,2], [0,1,2]]],
+                                      Mx, Sz).
+Mx = [], Sz = nem ? ;
+no
+| ?- kizarasos_szukites(szt(4,2,[]), [[[0,1,2],[0,1,2], [0,1,2], [0,1,2]],
+                                      [[1,2],  [0,1,2], [0,1,2], [0,1,2]],
+                                      [[0,1,2],[0,2],   [1,2],   [1,2]  ],
+                                      [[0,1,2],[0,1,2], [0,1,2], [0,1,2]]],
+                                      Mx, Sz).
+Mx =  [[[0,1,2],[0,1,2],[0,1,2],[0,1,2]],
+       [[1,2],  [0,1,2],[0,1,2],[0,1,2]],
+       [[0],    [0],    [1,2],  [1,2]  ],
+       [[0,1,2],[0,1,2],[0,1,2],[0,1,2]]],
+Sz = sor(3,0) ? ;
+no

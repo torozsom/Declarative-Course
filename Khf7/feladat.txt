@@ -1,0 +1,144 @@
+A számtekercs feladvány
+A feladat a nagy házi feladathoz (Nhf1) kapcsolódik, ezért először ezt ismertetjük.
+
+Adott egy n*n mezőből álló, négyzet alakú tábla, amelynek egyes mezőiben 1 és m közötti számok vannak. A feladat az, hogy további 1 és m közötti számokat helyezzünk el a táblában úgy, hogy az alábbi feltételek teljesüljenek:
+Minden sorban és minden oszlopban az 1..m számok mindegyike pontosan egyszer szerepel.
+A bal felső sarokból induló tekeredő vonal mentén a számok rendre az 1,2,...m,1,2,...,m,... sorrendben követik egymást.
+A tekeredő vonalat a következőképpen definiáljuk. Először a négyzet első sorában haladunk balról jobbra, majd az utolsó oszlopban felülről lefelé. Ezután az utolsó sorban megyünk jobbról balra, majd az első oszlopban alulról fölfelé, egészen a 2. sor 1. mezőjéig. Miután így bejártuk a négyzetes tábla szélső sorait és oszlopait, rekurzívan folytatjuk a bejárást a 2. sor 2. mezőjében kezdődő (n-2)*(n-2) mezőből álló négyzettel.
+Az 1. ábra egy feladványt ábrázol, a 2. ábra ennek (egyetlen) megoldását mutatja.
+
+1. ábra. Egy feladvány (n=6, m=3):
+
+-----------------------\
+                  2     |
+/-------------------\   |
+|     1             |   |
+|   /-----------\   |   |
+|   |           |   |   |
+|   |   /---\   |   |   |
+|   |   |       |   | 1 |
+|   |   \-------/   |   |
+|   |               |   |
+|   \---------------/   |
+|                       |
+\-----------------------/
+           	
+2. ábra. A feladvány megoldása:
+
+-----------------------\
+  1   -   -   -   2   3 |
+/-------------------\   |
+| -   1   2   3   - | - |
+|   /-----------\   |   |
+| - | 3   1   2 | - | - |
+|   |   /---\   |   |   |
+| - | 2 | 3   - | - | 1 |
+|   |   \-------/   |   |
+| 3 | -   -   -   1 | 2 |
+|   \---------------/   |
+| 2   -   -   1   3   - |
+\-----------------------/
+
+	           	
+Ebben a feladatban az alábbi Prolog predikátumot kell megírni:
+
+tekercs_szukites(+FLeiro, +TV, -SzTV) – az FLeiro feladványleíró által specifikált feladványhoz tartozó TV tekeredő vonalon végez el szűkítéseket, az alább ismertetett algoritmus szerint, és a szűkített tekeredő vonalat az SzTV kimenő paraméterben adja vissza.
+
+A részletes leírást és a formális specifikációt lejjebb találja.
+A számtekercs feladványnak megfelelő méretű négyzetes mátrixot kell kezelni. Ebben a feladatban egy olyan listát kezelünk, amely a mátrix összes elemét a tekeredő vonal sorrendjében tartalmazza. A lista minden egyes eleme egy tartományt határoz meg, amely a megengedett értékek halmazának felel meg. Egy ilyen tartományt egy egészekből álló, szigorúan növekvő nem-üres listával ábrázolunk. Hatékonysági okokból az egyelemű listák esetében egy alternatív ábrázolást is bevezetünk: az [I] egyelemű tartományt az I egész számmal is jelölhetjük.
+
+A megírandó eljárás paramétereinek típusát a következő – megjegyzésként megadott – Prolog-típusdefiníciók írják le. A "t_" előtag arra utal, hogy (listaként ábrázolt) tartományokból álló mátrixról, sorról stb. van szó.
+
+Típusdefiníciók
+
+% :- type feladvany_leiro ---> szt(meret,ciklus,list(adott_elem)).
+% :- type meret             == integer.
+% :- type ciklus            == integer.
+% :- type adott_elem      ---> i(sorszam,oszlopszam,ertek).
+% :- type sorszam           == integer.
+% :- type oszlopszam        == integer.
+% :- type ertek             == integer.
+
+% :- type t_tekercs         == list(t_ertek).             % tetszőleges hosszúságú
+% :- type t_ertek           == list(integer) \/ integer.  % egészek listája vagy egész
+
+% :- pred tekercs_szukites(feladvany_leiro::in,
+                              t_tekercs::in, 
+                              t_tekercs::out).
+
+A feladvany_leiro adatstruktúra megegyezik a nagy házi feladat specifikációjában szereplő azonos nevű struktúrával.
+
+A feladat ismertetése
+
+A feladatban megírandó predikátum a tekercs_szukites(FLeiro, TV, SzTV) Prolog-eljárás. Az eljárás első, bemenő paramétere (FLeiro) egy feladványleíró, ebből az szt(...,m,...) struktúrából itt csak a második argumentum (m) bír jelentőséggel, a másik két argumentumot ebben az eljárásban nem szabad figyelembe venni! Az eljárás második, bemenő paramétere (TV) egy tekeredő vonalat leíró tetszőleges hosszúságú nem-üres lista, amelynek minden eleme vagy egy egész szám (ami azt jelenti, hogy a tekercs adott pozíciójában ez az egész szám áll), vagy egy szigorúan növekvő nem-üres egészlista (ami azt jelenti, hogy a tekercs adott pozíciójában az egészlista bármelyik eleme állhat). A listában előforduló minden egésznek a 0, 1, ..., m intervallumba kell tartoznia (ezt a kis házi feladat megoldásában nem kell ellenőriznie).
+
+Az eljárás feladata, hogy – az alább specifikált módon – próbálja meg szűkíteni a lista elemeit, azaz próbáljon értékeket elhagyni a listaelemként szereplő tartományokból. Ha a szűkítési folyamat során kiderül, hogy a feladatnak nincs megoldása, akkor az eljárás hiúsuljon meg! Egyébként az SzTV kimenő paraméterben kell visszaadni a TV esetleges szűkítésével előállított listát. Figyelem: az itt előírt viselkedés eltér a korábbi kis házi feladatokban elvárt viselkedéstől: a korábbi feladatokban a meghiúsulás a szűkítés sikertelenségét jelezte. A jelen házi feladatban a szűkítés akkor sikertelen, ha a lefutás után a szűkített kimeneti SzTV lista megegyezik a TV bemenő listával.
+
+A tekeredő vonallal kapcsolatos követelmény szerepel a feladvány fenti leírásában:
+
+A bal felső sarokból induló tekeredő vonal mentén a számok rendre az 1,2,...m,1,2,...,m,... sorrendben követik egymást.
+Mivel a feladvány üres helyeinek a 0 értéket feleltetjük meg, ezért ezt feltételt a következő módon fogalmazhatjuk át:
+
+Ha a feladványmátrix bal felső sarkából induló tekeredő vonal mentén felsoroljuk a megoldásban szereplő egészeket, és ebből a listából elhagyjuk a 0 értékeket, akkor az [1,2,...m,1,2,...,m,...] végtelen lista egy kezdőszeletét kapjuk (ezt a megkötést nevezzük egyszerűsített feltételnek).
+Az alábbiakban megadunk egy szűkítési algoritmust, amely erre a feltételre épít. A jelen kis házi feladat megoldásában ezt az algoritmust pontosan követni kell, azonban amikor a kis házi feladat megoldását a nagy házi feladatot megoldó programba építik be, természetesen kibővíthetik, optimalizálhatják az algoritmust.
+
+Fontos megjegyezni, hogy a fenti feltételt szigorúbban, pontosabban is megfogalmazhatnánk, pl. kiköthetnénk, hogy a lista elemszáma n2 legyen. Ezt nem tesszük, mert így rövidebb, egyszerűbb teszteseteket adhatunk meg. Tehetnénk kikötést a nullák számára is, de mivel ezt a korlátozást a korábbi kis házi feladatok biztosítják, ez felesleges pluszmunkát jelentene ennek a feladatnak a megoldásában.
+
+A tekeredő vonal szűkítésének algoritmusa
+Vezessük be a következő elnevezéseket:
+
+utolsó pozitív: egy egészlista utolsó pozitív eleme az, amelyik után már nincs pozitív szám a listában;
+ciklikus rákövetkező: az 1..m intervallumba eső bármely j egész ciklikus rákövetkezője j+1, ha j < m, egyébként 1;
+ciklikus megelőző: az 1..m intervallumba eső bármely j egész ciklikus megelőzője j-1, ha j > 1, egyébként m.
+Tekintsünk egy tekercs_szukites(FLeiro, TV, SzTV) eljáráshívást, ahol a TV bemenő paraméter egy tekeredő vonalat ábrázoló k hosszúságú lista, az SzTV kimenő paraméter pedig a TV listából esetleges szűkítéssel előállított, a TV-hez hasonlóan k hosszúságú lista.
+
+Jelöljük TVi-vel a TV lista i-edik elemét, ez vagy egy 0..m közötti egész, vagy pedig 0..m közötti egészek szigorúan növekvő listája. Mindkét esetben TVi egy nem-üres halmazt határoz meg – ezért halmazként is hivatkozunk majd rá, és halmazműveletekkel írjuk le az ezzel kapcsolatos algoritmuselemeket.
+
+A szűkítés során végigmegyünk a TV listán, és minden i ∈ 1..k közötti listapozícióhoz hozzárendelünk egy UPi halmazt, amely a TV lista i-edik pozícióját megelőző listaprefixumban lehetséges utolsó pozitív egészeket sorolja fel. Ezzel párhuzamosan az UPi halmazokat felhasználva előállítjuk az SzTV kimenő paramétert is.
+
+A hozzárendelést rekurzívan definiáljuk, először UP1-et határozzuk meg, majd leírjuk, hogyan képezhető az UPi+1 halmaz az UPi halmazból.
+
+UP1 = [m]. UP1-et a TV lista első elemét megelőző prefixum határozza meg, ami nyilvánvalóan egy üres lista. Azzal, hogy az m-et rendeljük a kezdeti üres listához, pont a kívánt hatást érjük el (nevezetesen, hogy a tekeredő vonal első pozitív eleme 1 legyen), hiszen az m ciklikus rákövetkezője az 1.
+Az UPi+1 halmaz meghatározását megelőzően elvégezzük a TVi pozíció szűkítését. Ehhez először képezzük az UPi-beli elemek ciklikus rákövetkezőinek CR halmazát. Ha pl. a ciklushossz 5 és UPi = {1,3,5}, akkor a ciklikus rákövetkezők halmaza CR(UPi) = {1,2,4} (1 → 2, 3 → 4, 5 → 1). Tekintsük most a következő H halmazt:
+
+H = TVi ∩ (CR(UPi) ∪ {0})
+Az így előállított H halmaz a TVi (esetleges 0 elemén túl) azon pozitív elemeit tartja meg, amelyeket az ezen pozíciót megelőző prefixum megenged.
+
+Ezután az alábbi aleseteket vesszük figyelembe:
+
+ha H üres halmaz, akkor nincs megoldás, amit meghiúsulással jelzünk;
+egyébként a H halmaz lesz az i-edik pozíció szűkítésének eredménye: SzTVi= H.
+Végül a soron következő UPi+1 értéket az alábbi módon határozzuk meg:
+ha 0 ∉ SzTVi, akkor UPi+1 = SzTVi
+(ha az i-edik pozícióban nem lehet 0, akkor az ezen pozícióval végződő prefixumban csak az utolsó pozícióban előforduló pozitív egészek lehetnek az utolsó pozitívak),
+ha 0 ∈ SzTVi, akkor UPi+1 = UPi ∪ (SzTVi \ {0})
+(ha az i-edik pozícióban 0 van, akkor az ezt a pozíciót megelőző utolsó pozitívak "érvényesülnek", ellenkező esetben az i-edik pozícióban levő pozitív elemek).
+Vegyük észre, hogy a most ismertetett algoritmuson kívül nincs szükség az UPi értékekre, és az algoritmuson belül is mindig csak két ilyen értéket kezelünk: a már értékkel bíró UPi halmazt, és most előállítandó UPi+1 halmazt. Tehát felesleges az UPi halmazok listáját tárolni, elegendő egy ún. akkumulátorpár: egy már ismert előző UPi és egy előállítandó UPi+1.
+Záró megjegyzések
+A halmazműveletek (pl. metszetképzés) megvalósítására célszerű az ordsets könyvtár használata.
+
+A metszet előállításakor figyelni kell arra, hogy a TV bemeneti lista elemei lehetnek egészek (nemcsak egészlisták). Amikor egy egészként megadott halmazt metszünk egy olyan halmazzal, amely ezt az egészértéket tartalmazza, akkor az eredmény is legyen egész (nem pedig egy egyelemű halmaz). Minden más metszetképzés esetében, amikor is két, listával ábrázolt halmazt metszünk, az eredményt listaalakban kell előállítani, akkor is, ha az egyelemű.
+
+A nagy házi feladat megoldása során érdemes lehet az itt ismertetett szűkítésnek a párját is megvalósítani, amikor is a tekeredő vonal végéről indulunk, és a ciklikus megelőző fogalmát használva visszafelé haladva szűkítjük a listaelemeket.
+
+Példák
+
+| ?- tekercs_szukites(szt(6,3,[]), [[0,1,2,3],[0,1,2,3],[0,1,2,3]], SzTV).
+SzTV= [[0,1],[0,1,2],[0,1,2,3]] ? ;
+no
+| ?- tekercs_szukites(szt(6,3,[]), [[0,1,2,3],[0,2,3],[0,1,2,3]], SzTV).
+SzTV= [[0,1],[0,2],[0,1,2,3]] ? ;
+no  
+| ?- tekercs_szukites(szt(6,3,[]), [[0,2,3],[2,3],[0,1,2,3]], SzTV).
+no                % Nincs megoldás, mert az első pozitív egészek közül az 1 ki van zárva.
+| ?-  tekercs_szukites(szt(6,3,[]), [[0,2,3],[0,2,3],[0,1,2,3]], SzTV).
+SzTV= [[0],[0],[0,1]] ? ;
+no
+| ?- tekercs_szukites(szt(6,3,[]), [0,0,0,1,0,2], SzTV).
+SzTV= [0,0,0,1,0,2] ? ;               % Nincs szűkítés.
+no
+| ?- tekercs_szukites(szt(6,3,[]), [0,0,0,[1],0,2], SzTV).
+SzTV= [0,0,0,[1],0,2] ? ;             % Nincs szűkítés, [1]-t nem szabad az 1 egésszé alakítani.
+no
+| ?- tekercs_szukites(szt(6,3,[]), [0,0,0,1,0,3], SzTV).
+no

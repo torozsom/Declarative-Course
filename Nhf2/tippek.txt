@@ -1,0 +1,144 @@
+
+       TIPPEK ÉS TANÁCSOK A FELADAT MEGOLDÁSÁHOZ v2.0
+
+    
+A. A feladat megoldásának vázlata
+===========================================
+    
+1. lépés: Sorra próbáljuk elvégezni a khf5, khf6, khf7 szűkítéseket,
+    ha valamelyik sikeres, folytatjuk az 1. lépésnél.  Ha semelyik
+    szűkítést sem lehet alkalmazni, továbbmegyünk a 2. lépésre.
+
+2. lépés: Ha nincs olyan mező a mátrixban, amely legalább két értéket
+    vehet fel, akkor találtunk egy megoldást (elvben nem szükséges, de
+    a biztonság kedvéért le lehet futtatni erre a khf4-beli
+    ellenőrzést).
+
+3. lépés: Ha van egy olyan mező a mátrixban, amely n > 1 értéket vehet
+    fel, akkor létrehozunk egy n-ágú választási pontot, ahol az adott
+    mező az i-edik ágon az i-edik értéket veszi fel, majd folytatjuk
+    az 1. lépésnél.
+
+
+B. Szűkítés 
+===========
+
+Fontos kiegészítés: mit értünk az alatt, hogy elvégezzük a khf5, khf6,
+khf7 szűkítéseket?
+
+khf5: Ebben az esetben egy az egyben futtathatjuk a KHF5 feladatban
+    specifikált algoritmust.
+
+khf6: Ebben a kis házi feladatban megírt eljárás, ha ismételten
+    meghívják, sikeresen fut le:
+
+    | ?- kizarasos_szukites(FL, Mx0, Mx1, Sz0),
+         kizarasos_szukites(FL, Mx1, Mx2, Sz1).
+
+    Itt Sz0 és Sz1 azonos lesz, és a második hívás már nem változtatja
+    meg a mátrixot (azaz Mx2 = Mx1). A végtelen ciklus kivédésére a
+    legegyszerűbb megoldás az, hogy az eljárás lefutása után
+    meghiúsulunk, ha a mátrix nem változott. Ezt a következő módon
+    tehetjük meg:
+
+    kizarasos_szukites(FL, Mx0, Mx1, _), Mx1 \= Mx0
+
+khf7: Itt több átalakítás szükséges:
+
+    1. A bemenő mátrixot tekercsvonallá kell alakítani, elvégezni a
+       szűkítést, majd az eredményt visszaalakítani a kimeneti
+       mátrixszá.
+
+    2. A szűkítést érdemes mindkét irányban is elvégezni.
+
+    3. A khf5 és khf6-beli eljárásokkal azonos viselkedésre van szükség
+       a szűkítés sikertelensége, illetve ellentmondás észlelése
+       esetén.
+
+    A fentiek szerint megvalósított szűkítő eljárást nevezzük így:
+
+    % mxtekercs_szukites(FL, Mx0, Mx1): Az FL feladatleírónak
+    % megfelelő Mx0 mátrixon elvégezve a tekercsvonal menti
+    % szűkíteseket az Mx1 mátrixot kapjuk. Az eljárás hiúsuljon meg,
+    % ha nincs Mx0-ban szűkítési lehetőség, valamint az Mx1 = []
+    % behelyettesítéssel lépjen ki, ha az Mx0 tekercsvonal menti
+    % ellentmondást tartalmaz.
+
+A fent leírtak kiegészítéseként azt javasoljuk, hogy foglalják
+egyetlen eljárásba a három szűkítési folyamatot:
+
+szukites(FL, Mx0, Mx) :-
+        (   ismert_szukites(FL, Mx0, Mx) -> true
+        ;   kizarasos_szukites(FL, Mx0, Mx, _Szukit),
+            Mx \== Mx0 -> true
+        ;   mxtekercs_szukites(FL, Mx0, Mx) -> true
+        ).
+
+C. Választási pontok létrehozása
+================================
+
+Ha a fenti szukites(FL, Mx0, Mx) hívás meghiúsul, az azt jelenti, hogy
+nem lehet (további) szűkítéseket alkalmazni a mátrixra. Ekkor
+keresnünk kell a mátrixban egy olyan Xs elemet, amely egy n elemű
+lista (n >= 2 kell legyen, mert ha Xs egyelemű lenne, akkor azt az
+ismert_szukites/3 egész számmá alakította volna). Ekkor értelemszerűen
+egy n ágú választási pontot kell létrehozni (célszerűen a member/2
+segítségével), és az i-edik ágon a mátrix adott Xs elemét egy egyelemű
+[Xi] listára kell cserélni, ahol Xi az Xs lista i-edik eleme.
+
+Többféle módon választhatjuk ki azt a mátrixelemet, amellyel a
+következő választási pontot létrehozzuk. A legegyszerűbb, ha a
+mátrixon pl. sorfolytonosan megyünk végig és az elsőként megtalált
+legalább kételemű listát tartalmazó elemre hozunk létre választási
+pontot. Egy másik lehetőség, hogy először megpróbálunk kételemű listát
+keresni a mátrixelemek között, ha ez nem sikerül, próbálkozunk a
+3-eleműekkel stb., tehát a lehető legkisebb "szélességű" elágazást
+hozzuk létre -- ez a leghamarabbi meghiúsulás (first-fail) elv. A
+sorfolytonos keresés helyett próbálkozhatunk pl. a tekercsvonal mentén
+való kereséssel is, stb.
+    
+Miután létrehoztunk egy választási pontot és annak egy ágát
+kiválasztottuk, vissza kell térni az ismételt szűkítési fázisba: a
+B. pontban ismertetett szukites/3 eljárást mindaddig ismételten meg
+kell hívni, amíg az eljárás szűkíteni tud.  Ezután újabb választási
+pontot kell létrehozni, újra szűkíteni stb.  A folyamat akkor ér
+véget, ha a mátrix minden eleme számértékre redukálódik.
+
+------------------------------------------------------------------------
+
+
+
+Kérdések és válaszok
+====================
+Kérdés:
+
+Abban szeretnék segítséget kérni, hogy a khf7 átalakításában a
+mátrixot először tekercs listává kell alakítani amit meg tudtam
+csinálni (...). Viszont nem tudom, hogy kéne megoldani, hogy a tekercs
+listából vissza tudjam alakítani a mátrixot. Ebben szeretnék
+segítséget kérni.
+
+Válasz:
+
+Írjon egy mx(N, Mx) eljárást, amely adott N egész szám esetén létrehoz
+egy olyan N x N-es -- listák listájaként ábrázolt mátrixot, amelynek
+elemei különböző változók! Példák:
+
+Írjon egy mx(N, Mx) eljárást, amely adott N egész szám esetén létrehoz
+egy olyan N x N-es -- listák listájaként ábrázolt mátrixot, amelynek
+elemei különböző változók! Példák:
+
+| ?- mx(1, Mx).
+Mx = [[_A]] ? ;
+no
+| ?- mx(3, Mx).
+Mx = [[_A,_B,_C],[_D,_E,_F],[_G,_H,_I]] ? ;
+no
+
+Tegyük fel, hogy matrix_tekercs(Mx, TV) néven írta meg azt az
+eljárást, amellyel a mátrixot tekercsvonallá tudja alakítani. Ezután a
+másik irányú konverziót -- az Mx mátrix előállítását egy adott TV
+tekercsvonalból -- a következő kódrészlettel el tudja végezni, ahol az
+N változó a mátrix méretét kell tartalmazza:
+
+| ?- N = ..., mx(N, Mx), matrix_tekercs(Mx, TV).
