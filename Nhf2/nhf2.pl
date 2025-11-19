@@ -1,406 +1,292 @@
 % ------------------------------------------------------------
-% Nhf2 – Számtekercs
+% Nhf2 - Számtekercs végső megoldó
 %
-% @author "Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]"
-% @date   "2025-11-20" 
+% A feladat megoldásához felhasználom a korábbi kis házikban
+% elkészített szűkítéseket (Khf5, Khf6, Khf7).
 % ------------------------------------------------------------
-
 
 
 :- use_module(library(lists)).
 
+:- ensure_loaded('../Khf5/khf5.pl').
+:- ensure_loaded('../Khf6/khf6.pl').
+:- ensure_loaded('../Khf7/khf7.pl').
 
 
-szamtekercs(szt(N, M, Givens), Matrix) :-
-    create_matrix(N, Matrix),
-    set_givens(Givens, Matrix),
-    % szamtekercs(+Spec, -Matrix) : Builds the spiral matrix from specification szt(N,M,Givens).
-    numlist(1, M, Numbers),
-    make_needs_list(N, Numbers, RowNeeds),
-    make_needs_list(N, Numbers, ColNeeds),
-    repeat_value(N, N, RowSpaces),
-    repeat_value(N, N, ColSpaces),
-    spiral_path(N, Path),
-    fill_path(Path, Matrix, RowNeeds, ColNeeds, RowSpaces, ColSpaces, 0, M).
+% szamtekercs(+Feladvany, -Megoldas)
+szamtekercs(FL, Megoldas) :-
+    kezdotabla(FL, Matrix0),
+    solve_matrix(FL, Matrix0, MatrixSolved),
+    matrix_to_solution(MatrixSolved, Megoldas).
 
 
-
-% create_matrix(+N, -Matrix): N x N méretű mátrix létrehozása (szabad változók)
-create_matrix(N, Matrix) :-
-    length(Matrix, N),
-    maplist(length_n(N), Matrix).
-
-
-% length_n(+N, -List): N hosszú lista létrehozása
-length_n(N, List) :-
-    length(List, N).
-
-
-% set_givens(+AdottLista, +Matrix): megadott i(R,C,V) értékek beírása
-set_givens([], _).
-set_givens([i(R, C, V)|Rest], Matrix) :-
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell),
-    Cell = V,
-    set_givens(Rest, Matrix).
+% solve_matrix(+FL, +MatrixIn, -MatrixSolved)
+solve_matrix(_, [], _) :- !, fail.
+solve_matrix(FL, MatrixIn, MatrixSolved) :-
+    propagate_all(FL, MatrixIn, Reduced),
+    Reduced \== [],
+    (   solved_matrix(Reduced)
+    ->  MatrixSolved = Reduced
+    ;   select_branch_cell(Reduced, R, C, Domain),
+        member(Value, Domain),
+        set_cell(Reduced, R, C, [Value], NextMatrix),
+        solve_matrix(FL, NextMatrix, MatrixSolved)
+    ).
 
 
-% make_needs_list(+Darab, +Numbers, -ListaLista): Darab darab Numbers másolat
-make_needs_list(0, _, []).
-make_needs_list(N, Numbers, [Copy|Rest]) :-
+% propagate_all(+FL,+MatrixIn,-MatrixOut)
+propagate_all(_FL, [], []) :- !.
+propagate_all(FL, MatrixIn, MatrixOut) :-
+    (   apply_one_restriction(FL, MatrixIn, Temp)
+    ->  (   Temp == []
+        ->  MatrixOut = []
+        ;   propagate_all(FL, Temp, MatrixOut)
+        )
+    ;   MatrixOut = MatrixIn
+    ).
+
+
+% apply_one_restriction(+FL,+MatrixIn,-MatrixOut)
+apply_one_restriction(FL, MatrixIn, MatrixOut) :-
+    (   ismert_szukites(FL, MatrixIn, MatrixOut)
+    ->  true
+    ;   kizarasos_szukites(FL, MatrixIn, Temp, _Info),
+        (   Temp == []
+        ->  MatrixOut = []
+        ;   Temp \== MatrixIn,
+            MatrixOut = Temp
+        )
+    ;   mxtekercs_szukites(FL, MatrixIn, MatrixOut)
+    ).
+
+
+% mxtekercs_szukites(+FL,+MatrixIn,-MatrixOut)
+mxtekercs_szukites(FL, MatrixIn, MatrixOut) :-
+    MatrixIn \== [],
+    length(MatrixIn, N),
     N > 0,
-    N1 is N - 1,
-    copy_list(Numbers, Copy),
-    make_needs_list(N1, Numbers, Rest).
+    spiral_positions(N, Positions),
+    extract_spiral(MatrixIn, Positions, Spiral),
+    (   apply_spiral_passes(FL, Spiral, Narrowed)
+    ->  (   Narrowed == Spiral
+        ->  fail
+        ;   replace_spiral_values(MatrixIn, Positions, Narrowed, MatrixOut)
+        )
+    ;   MatrixOut = []
+    ).
 
 
-copy_list(List, Copy) :-
-    append(List, [], Copy).
+% apply_spiral_passes(+FL,+SpiralIn,-SpiralOut)
+apply_spiral_passes(FL, SpiralIn, SpiralOut) :-
+    tekercs_szukites(FL, SpiralIn, SpiralForward),
+    reverse(SpiralIn, RevIn),
+    tekercs_szukites_backward(FL, RevIn, RevNarrowed),
+    reverse(RevNarrowed, SpiralBackward),
+    intersect_spiral_domains(SpiralForward, SpiralBackward, SpiralOut).
+
+intersect_spiral_domains([], [], []).
+intersect_spiral_domains([A|As], [B|Bs], [R|Rs]) :-
+    intersect_domains(A, B, R),
+    intersect_spiral_domains(As, Bs, Rs).
+
+intersect_domains(A, B, R) :-
+    integer(A),
+    integer(B),
+    !,
+    ( A =:= B -> R = A ; fail ).
+intersect_domains(A, B, R) :-
+    integer(A),
+    is_list(B),
+    !,
+    ( ord_memberchk(A, B) -> R = A ; fail ).
+intersect_domains(A, B, R) :-
+    is_list(A),
+    integer(B),
+    !,
+    ( ord_memberchk(B, A) -> R = B ; fail ).
+intersect_domains(A, B, R) :-
+    is_list(A),
+    is_list(B),
+    ord_intersection(A, B, Intersect),
+    Intersect \= [],
+    R = Intersect.
 
 
-% repeat_value(+Count,+Value,-Lista): Value ismétlése Count-szor
-repeat_value(0, _, []).
-repeat_value(Count, Value, [Value|Rest]) :-
-    Count > 0,
-    Count1 is Count - 1,
-    repeat_value(Count1, Value, Rest).
+% Backward spiral narrowing
+tekercs_szukites_backward(szt(_, CycleLength, _), SpiralLine, NarrowedSpiral) :-
+    SpiralLine \= [],
+    process_spiral_backward(SpiralLine, CycleLength, [1], NarrowedSpiral),
+    !.
+
+process_spiral_backward([], _, _, []).
+process_spiral_backward([PositionDomain|Rest], CycleLength,
+                        NextPositiveSetIn,
+                        [NarrowedDomain|RestNarrowed]) :-
+    shrink_position_backward(PositionDomain, CycleLength,
+                             NextPositiveSetIn,
+                             NarrowedDomain,
+                             NextPositiveSetOut),
+    process_spiral_backward(Rest, CycleLength,
+                            NextPositiveSetOut,
+                            RestNarrowed).
+
+shrink_position_backward(PositionDomain, CycleLength,
+                         NextPositiveSetIn,
+                         NarrowedDomain,
+                         NextPositiveSetOut) :-
+    cyclic_predecessors(CycleLength, NextPositiveSetIn, PredSet),
+    ord_add_element(PredSet, 0, AllowedValues),
+    intersect_domain(PositionDomain, AllowedValues,
+                     NarrowedDomain, ResultSet),
+    update_next_positive_set(ResultSet, NextPositiveSetIn,
+                             NextPositiveSetOut).
+
+cyclic_predecessors(CycleLength, NextSet, PredSet) :-
+    findall(Pred, (member(Value, NextSet), cyclic_predecessor(CycleLength, Value, Pred)), PredList),
+    list_to_ord_set(PredList, PredSet).
+
+cyclic_predecessor(_, 0, 0) :- !.
+cyclic_predecessor(CycleLength, Value, Pred) :-
+    (   Value > 1
+    ->  Pred is Value - 1
+    ;   Pred is CycleLength
+    ).
+
+update_next_positive_set(ResultSet, NextPositiveSetIn, NextPositiveSetOut) :-
+    (   \+ ord_memberchk(0, ResultSet)
+    ->  NextPositiveSetOut = ResultSet
+    ;   remove_zero(ResultSet, PositiveOnly),
+        ord_union(PositiveOnly, NextPositiveSetIn, NextPositiveSetOut)
+    ).
+
+% extract_spiral(+Matrix,+Positions,-SpiralList)
+extract_spiral(Matrix, Positions, Spiral) :-
+    maplist(cell_at(Matrix), Positions, Spiral).
+
+cell_at(Matrix, pos(R,C), Cell) :-
+    nth1(R, Matrix, Row),
+    nth1(C, Row, Cell).
 
 
-% spiral_path(+N, -Path) : Generates spiral traversal positions for an N x N grid.
-spiral_path(N, Path) :-
-    spiral(1, N, 1, N, Path).
+% replace_spiral_values(+MatrixIn,+Positions,+Values,-MatrixOut)
+replace_spiral_values(MatrixIn, Positions, Values, MatrixOut) :-
+    replace_spiral_values_(Positions, Values, MatrixIn, MatrixOut).
+
+replace_spiral_values_([], [], Matrix, Matrix).
+replace_spiral_values_([pos(R,C)|RestPos], [Value|RestVals], MatrixIn, MatrixOut) :-
+    set_cell(MatrixIn, R, C, Value, MatrixNext),
+    replace_spiral_values_(RestPos, RestVals, MatrixNext, MatrixOut).
 
 
-% spiral(+Top,+Bottom,+Left,+Right,-Path) : Recursive spiral boundary collection.
-spiral(Top, Bottom, Left, Right, []) :-
-    Top > Bottom ; Left > Right.
-spiral(Top, Bottom, Left, Right, Path) :-
+% solved_matrix(+Matrix)
+solved_matrix(Matrix) :-
+    maplist(row_finalized, Matrix).
+
+row_finalized(Row) :-
+    maplist(cell_finalized, Row).
+
+cell_finalized(Cell) :- integer(Cell), !.
+cell_finalized([_]).
+
+
+% select_branch_cell(+Matrix,-R,-C,-Domain)
+select_branch_cell(Matrix, R, C, Domain) :-
+    findall(branch(Len,RowIdx,ColIdx,Dom),
+            ( nth1(RowIdx, Matrix, Row),
+              nth1(ColIdx, Row, Cell),
+              is_list(Cell),
+              length(Cell, Len),
+              Len > 1,
+              Dom = Cell
+            ),
+            Branches),
+    Branches \= [],
+    predsort(compare_branch, Branches, [branch(_,R,C,Domain)|_]).
+
+compare_branch(Order, branch(L1,R1,C1,_), branch(L2,R2,C2,_)) :-
+    (   L1 =:= L2
+    ->  ( R1 =:= R2
+        ->  compare(Order, C1, C2)
+        ;   compare(Order, R1, R2)
+        )
+    ;   compare(Order, L1, L2)
+    ).
+
+
+% matrix_to_solution(+Matrix,-Solution)
+matrix_to_solution(Matrix, Solution) :-
+    maplist(row_to_values, Matrix, Solution).
+
+row_to_values(Row, Values) :-
+    maplist(cell_value, Row, Values).
+
+cell_value(Cell, Value) :-
+    (   integer(Cell)
+    ->  Value = Cell
+    ;   Cell = [Value]
+    ).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Spirál pozíciók kezelése
+
+spiral_positions(N, Positions) :-
+    spiral_collect(1, N, 1, N, Positions).
+
+spiral_collect(Top, Bottom, Left, Right, []) :-
+    (Top > Bottom ; Left > Right), !.
+spiral_collect(Top, Bottom, Left, Right, Positions) :-
     Top =< Bottom,
     Left =< Right,
-    top_edge(Top, Left, Right, TopCells),
-    T1 is Top + 1,
-    right_edge(T1, Bottom, Right, RightCells),
+    top_edge_positions(Top, Left, Right, TopCells),
+    Top1 is Top + 1,
+    right_edge_positions(Top1, Bottom, Right, RightCells),
     (   Top < Bottom
-    ->  BStart is Right - 1,
-        bottom_edge(Bottom, BStart, Left, BottomCells)
+    ->  StartB is Right - 1,
+        bottom_edge_positions(Bottom, StartB, Left, BottomCells)
     ;   BottomCells = []
     ),
     (   Left < Right
-    ->  LStart is Bottom - 1,
-        LEnd is Top + 1,
-        left_edge(LStart, LEnd, Left, LeftCells)
+    ->  StartL is Bottom - 1,
+        EndL is Top + 1,
+        left_edge_positions(StartL, EndL, Left, LeftCells)
     ;   LeftCells = []
     ),
     NextTop is Top + 1,
     NextBottom is Bottom - 1,
     NextLeft is Left + 1,
     NextRight is Right - 1,
-    spiral(NextTop, NextBottom, NextLeft, NextRight, InnerCells),
-    append(TopCells, RightCells, Tmp1),
-    append(Tmp1, BottomCells, Tmp2),
-    append(Tmp2, LeftCells, Tmp3),
-    append(Tmp3, InnerCells, Path).
+    spiral_collect(NextTop, NextBottom, NextLeft, NextRight, InnerCells),
+    append([TopCells, RightCells, BottomCells, LeftCells, InnerCells], Positions).
 
 
-% top_edge(+Row,+Left,+Right,-Cells) : Collects top edge row cells.
-top_edge(_, Left, Right, []) :-
-    Left > Right.
-top_edge(Row, Left, Right, [pos(Row, Left)|Rest]) :-
+top_edge_positions(_Row, Left, Right, []) :-
+    Left > Right, !.
+top_edge_positions(Row, Left, Right, [pos(Row, Left)|Rest]) :-
     Left =< Right,
     Next is Left + 1,
-    top_edge(Row, Next, Right, Rest).
+    top_edge_positions(Row, Next, Right, Rest).
 
 
-% right_edge(+Top,+Bottom,+Col,-Cells) : Collects right edge column cells.
-right_edge(Top, Bottom, _, []) :-
-    Top > Bottom.
-right_edge(Top, Bottom, Col, [pos(Top, Col)|Rest]) :-
+right_edge_positions(Top, Bottom, _Col, []) :-
+    Top > Bottom, !.
+right_edge_positions(Top, Bottom, Col, [pos(Top, Col)|Rest]) :-
     Top =< Bottom,
     Next is Top + 1,
-    right_edge(Next, Bottom, Col, Rest).
+    right_edge_positions(Next, Bottom, Col, Rest).
 
 
-% bottom_edge(+Row,+Start,+End,-Cells) : Collects bottom edge row cells descending.
-bottom_edge(_, Start, End, []) :-
-    Start < End.
-bottom_edge(Row, Start, End, [pos(Row, Start)|Rest]) :-
+bottom_edge_positions(_Row, Start, End, []) :-
+    Start < End, !.
+bottom_edge_positions(Row, Start, End, [pos(Row, Start)|Rest]) :-
     Start >= End,
     Next is Start - 1,
-    bottom_edge(Row, Next, End, Rest).
+    bottom_edge_positions(Row, Next, End, Rest).
 
 
-% left_edge(+Start,+End,+Col,-Cells) : Collects left edge column cells ascending.
-left_edge(Start, End, _, []) :-
-    Start < End.
-left_edge(Start, End, Col, [pos(Start, Col)|Rest]) :-
+left_edge_positions(Start, End, _Col, []) :-
+    Start < End, !.
+left_edge_positions(Start, End, Col, [pos(Start, Col)|Rest]) :-
     Start >= End,
     Next is Start - 1,
-    left_edge(Next, End, Col, Rest).
-
-
-% fill_path(+Positions,+Matrix,+RowNeeds,+ColNeeds,+RowSpaces,+ColSpaces,+Next,+M)
-% Fills matrix following Path, placing numbers or zeros respecting constraints.
-fill_path([], _, RowNeeds, ColNeeds, _, _, _, _) :-
-    all_empty(RowNeeds),
-    all_empty(ColNeeds),
-    !.
-
-fill_path([pos(R, C)|Rest], Matrix, RowNeeds, ColNeeds, RowSpaces, ColSpaces, Next, M) :-
-    nth1(R, RowSpaces, RowSpaceBefore),
-    RowSpaceAfter is RowSpaceBefore - 1,
-    RowSpaceAfter >= 0,
-    set_nth(RowSpaces, R, RowSpaceAfter, RowSpacesUpdated),
-    nth1(C, ColSpaces, ColSpaceBefore),
-    ColSpaceAfter is ColSpaceBefore - 1,
-    ColSpaceAfter >= 0,
-    set_nth(ColSpaces, C, ColSpaceAfter, ColSpacesUpdated),
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell),
-    process_cell(Cell, R, C, Matrix, Rest,
-                 RowNeeds, ColNeeds,
-                 RowSpaceBefore, RowSpaceAfter,
-                 ColSpaceBefore, ColSpaceAfter,
-                 Next, M,
-                 RowNeedsNext, ColNeedsNext, NextValue),
-    fill_path(Rest, Matrix, RowNeedsNext, ColNeedsNext, RowSpacesUpdated, ColSpacesUpdated, NextValue, M).
-
-
-% process_cell(+Cell,+R,+C,+Matrix,+Rest,...,+Next,+M,-RowNeedsNext,-ColNeedsNext,-NextOut)
-% Handles logic based on whether cell is variable or filled.
-process_cell(Cell, R, C, Matrix, Rest,
-             RowNeeds, ColNeeds,
-             RowSpaceBefore, RowSpaceAfter,
-
-             ColSpaceBefore, ColSpaceAfter,
-             Next, M,
-             RowNeedsNext, ColNeedsNext, NextOut) :-
-    expected_value(Next, M, Expected),
-    nth1(R, RowNeeds, RowNeedList),
-    length(RowNeedList, RowNeedLen),
-    nth1(C, ColNeeds, ColNeedList),
-    length(ColNeedList, ColNeedLen),
-    (   var(Cell)
-    ->  process_var_cell(Cell, Expected, R, C, Matrix, Rest,
-                         RowNeeds, ColNeeds,
-                         RowNeedList, RowNeedLen,
-                         ColNeedList, ColNeedLen,
-                         RowSpaceBefore, RowSpaceAfter,
-                         ColSpaceBefore, ColSpaceAfter,
-                         Next,
-                         RowNeedsNext, ColNeedsNext, NextOut)
-    ;   process_filled_cell(Cell, Expected, R, C, Matrix, Rest,
-                            RowNeeds, ColNeeds,
-                            RowNeedList, RowNeedLen,
-                            ColNeedList, ColNeedLen,
-                            RowSpaceBefore, RowSpaceAfter,
-                            ColSpaceBefore, ColSpaceAfter,
-                            Next,
-                            RowNeedsNext, ColNeedsNext, NextOut)
-    ).
-
-
-% process_var_cell(+Cell,+Expected,...) : Decides placing Expected or zero into a variable cell.
-process_var_cell(Cell, Expected, R, C, Matrix, Rest,
-                 RowNeeds, ColNeeds,
-                 RowNeedList, RowNeedLen,
-
-                 ColNeedList, ColNeedLen,
-                 RowSpaceBefore, RowSpaceAfter,
-                 ColSpaceBefore, ColSpaceAfter,
-                 Next,
-                 RowNeedsNext, ColNeedsNext, NextOut) :-
-    (   needs_value(RowNeedList, Expected),
-        needs_value(ColNeedList, Expected)
-    ->  (   must_place_here(RowNeedLen, RowSpaceBefore,
-                            ColNeedLen, ColSpaceBefore,
-                            Matrix, Rest, RowNeeds, ColNeeds, Expected)
-        ->  place_expected(Cell, Expected, R, C, RowNeeds, ColNeeds,
-                           RowSpaceAfter, ColSpaceAfter,
-                           Next,
-                           RowNeedsNext, ColNeedsNext, NextOut)
-        ;   (   place_expected(Cell, Expected, R, C, RowNeeds, ColNeeds,
-                               RowSpaceAfter, ColSpaceAfter,
-                               Next,
-                               RowNeedsNext, ColNeedsNext, NextOut)
-            ;   choose_zero(Cell, Matrix, Rest, RowNeeds, ColNeeds,
-                            R, C,
-                            RowSpaceAfter, ColSpaceAfter,
-                            Expected, Next,
-                            RowNeedsNext, ColNeedsNext, NextOut)
-            )
-        )
-    ;   choose_zero(Cell, Matrix, Rest, RowNeeds, ColNeeds,
-                    R, C,
-                    RowSpaceAfter, ColSpaceAfter,
-                    Expected, Next,
-                    RowNeedsNext, ColNeedsNext, NextOut)
-    ).
-
-
-% process_filled_cell(+Cell,+Expected,...) : Processes a pre-filled cell (0 or number).
-process_filled_cell(Cell, Expected, R, C, Matrix, Rest,
-                    RowNeeds, ColNeeds,
-                    _RowNeedList, _RowNeedLen,
-                    _ColNeedList, _ColNeedLen,
-                    _RowSpaceBefore, RowSpaceAfter,
-                    _ColSpaceBefore, ColSpaceAfter,
-                    Next,
-                    RowNeedsNext, ColNeedsNext, NextOut) :-
-    (   Cell = 0
-    ->  choose_zero_fixed(Matrix, Rest, RowNeeds, ColNeeds,
-                          R, C,
-                          RowSpaceAfter, ColSpaceAfter,
-                          Expected, Next,
-                          RowNeedsNext, ColNeedsNext, NextOut)
-    ;   place_expected(Cell, Expected, R, C, RowNeeds, ColNeeds,
-                       RowSpaceAfter, ColSpaceAfter,
-                       Next,
-                       RowNeedsNext, ColNeedsNext, NextOut)
-    ).
-
-
-% forced_number(+RowNeedLen,+RowSpaceBefore,+ColNeedLen,+ColSpaceBefore) : True if value must be placed.
-forced_number(RowNeedLen, RowSpaceBefore, ColNeedLen, ColSpaceBefore) :-
-    RowNeedLen =:= RowSpaceBefore ;
-    ColNeedLen =:= ColSpaceBefore.
-    
-
-% place_expected(+Cell,+Expected,...) : Places Expected and updates needs lists and next counter.
-place_expected(Cell, Expected, R, C, RowNeeds, ColNeeds,
-               RowSpaceAfter, ColSpaceAfter,
-               Next,
-               RowNeedsNext, ColNeedsNext, NextOut) :-
-    Cell = Expected,
-    remove_need(RowNeeds, R, Expected, RowNeedsMid),
-    ensure_capacity(RowNeedsMid, R, RowSpaceAfter),
-    remove_need(ColNeeds, C, Expected, ColNeedsMid),
-    ensure_capacity(ColNeedsMid, C, ColSpaceAfter),
-    NextOut is Next + 1,
-    RowNeedsNext = RowNeedsMid,
-    ColNeedsNext = ColNeedsMid.
-
-
-% remove_need(+Needs,+Index,+Value,-Updated) : Removes Value from needs list at Index.
-remove_need(Needs, Index, Value, UpdatedNeeds) :-
-    nth1(Index, Needs, NeedList),
-    select(Value, NeedList, NewNeedList),
-    set_nth(Needs, Index, NewNeedList, UpdatedNeeds).
-
-
-% ensure_capacity(+Needs,+Index,+RemainingCells) : Validates capacity vs remaining cells.
-ensure_capacity(Needs, Index, RemainingCells) :-
-    nth1(Index, Needs, NeedList),
-    length(NeedList, Len),
-    Len =< RemainingCells.
-
-
-% needs_value(+List,+Value) : True if Value is needed in List.
-needs_value(List, Value) :-
-    memberchk(Value, List).
-
-
-% value_still_needed(+RowNeeds,+Value) : True if Value appears in any row needs.
-value_still_needed(RowNeeds, Value) :-
-    member(RowNeedList, RowNeeds),
-    memberchk(Value, RowNeedList),
-    !.
-
-
-% has_future_slot(+Matrix,+RemainingPositions,+RowNeeds,+ColNeeds,+Value) : Checks if Value can still be placed later.
-has_future_slot(_, [], _, _, _) :-
-    fail.
-has_future_slot(Matrix, [pos(R, C)|Rest], RowNeeds, ColNeeds, Value) :-
-    needs_value_in_row(RowNeeds, R, Value),
-    needs_value_in_col(ColNeeds, C, Value),
-    cell_accepts_value(Matrix, R, C, Value)
-    ->  true
-    ;   has_future_slot(Matrix, Rest, RowNeeds, ColNeeds, Value).
-
-
-% needs_value_in_row(+RowNeeds,+R,+Value) : True if row R needs Value.
-needs_value_in_row(RowNeeds, R, Value) :-
-    nth1(R, RowNeeds, RowNeedList),
-    memberchk(Value, RowNeedList).
-
-
-% needs_value_in_col(+ColNeeds,+C,+Value) : True if column C needs Value.
-needs_value_in_col(ColNeeds, C, Value) :-
-    nth1(C, ColNeeds, ColNeedList),
-    memberchk(Value, ColNeedList).
-
-
-% cell_accepts_value(+Matrix,+R,+C,+Value) : True if position can take Value.
-cell_accepts_value(Matrix, R, C, Value) :-
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell),
-    (   var(Cell)
-    ->  true
-    ;   Cell = Value
-    ).
-
-
-% allow_zero(+RowNeeds,+ColNeeds,+Matrix,+Rest,+Expected) : Determines if zero allowed now.
-allow_zero(RowNeeds, ColNeeds, Matrix, Rest, Expected) :-
-    (   value_still_needed(RowNeeds, Expected)
-    ->  has_future_slot(Matrix, Rest, RowNeeds, ColNeeds, Expected)
-    ;   true
-    ).
-
-
-% choose_zero(+Cell,...) : Assigns zero to a variable cell if permissible.
-choose_zero(Cell, Matrix, Rest, RowNeeds, ColNeeds,
-            R, C,
-            RowSpaceAfter, ColSpaceAfter,
-            Expected, Next,
-            RowNeedsOut, ColNeedsOut, NextOut) :-
-    allow_zero(RowNeeds, ColNeeds, Matrix, Rest, Expected),
-    Cell = 0,
-    ensure_capacity(RowNeeds, R, RowSpaceAfter),
-    ensure_capacity(ColNeeds, C, ColSpaceAfter),
-    RowNeedsOut = RowNeeds,
-    ColNeedsOut = ColNeeds,
-    NextOut = Next.
-
-
-% choose_zero_fixed(+Matrix,...) : Keeps a fixed zero cell; updates counters only.
-choose_zero_fixed(Matrix, Rest, RowNeeds, ColNeeds,
-                  R, C,
-                  RowSpaceAfter, ColSpaceAfter,
-                  Expected, Next,
-                  RowNeedsOut, ColNeedsOut, NextOut) :-
-    allow_zero(RowNeeds, ColNeeds, Matrix, Rest, Expected),
-    ensure_capacity(RowNeeds, R, RowSpaceAfter),
-    ensure_capacity(ColNeeds, C, ColSpaceAfter),
-    RowNeedsOut = RowNeeds,
-    ColNeedsOut = ColNeeds,
-    NextOut = Next.
-
-
-% must_place_here(+RowNeedLen,+RowSpaceBefore,+ColNeedLen,+ColSpaceBefore,+Matrix,+Rest,+RowNeeds,+ColNeeds,+Expected)
-% True if Expected must be placed at current cell.
-must_place_here(RowNeedLen, RowSpaceBefore, ColNeedLen, ColSpaceBefore,
-                Matrix, Rest, RowNeeds, ColNeeds, Expected) :-
-    forced_number(RowNeedLen, RowSpaceBefore, ColNeedLen, ColSpaceBefore)
-    ;   (   value_still_needed(RowNeeds, Expected),
-            \+ has_future_slot(Matrix, Rest, RowNeeds, ColNeeds, Expected)
-        ).
-
-
-% set_nth(+List,+Index,+Elem,-Updated) : Replaces element at Index with Elem.
-set_nth([_|Rest], 1, Elem, [Elem|Rest]).
-set_nth([H|Rest], Index, Elem, [H|UpdatedRest]) :-
-    Index > 1,
-    Index1 is Index - 1,
-    set_nth(Rest, Index1, Elem, UpdatedRest).
-
-
-% expected_value(+Next,+M,-Expected) : Computes next expected value cycling 1..M.
-expected_value(Next, M, Expected) :-
-    Rem is Next mod M,
-    Expected is Rem + 1.
-
-
-% all_empty(+NeedsLists) : True if all inner lists are empty.
-all_empty([]).
-all_empty([[]|Rest]) :-
-    all_empty(Rest).
+    left_edge_positions(Next, End, Col, Rest).
