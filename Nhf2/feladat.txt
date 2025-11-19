@@ -112,4 +112,3 @@ Az alábbi Prolog hívás az 1. ábrán látható feladványt oldja meg, az Mx v
 Egyéb követelmények
 
 Megoldásában tetszőleges Prolog-könyvtárakat használhat, kivéve a clpfd, clpq, clpr, clpb, chr és atts könyvtárakat: az ezeket felhasználó megoldásokat nem fogadjuk el, így a létraversenyben sem vehetnek részt, és megajánlott jegyet sem kaphatnak. Hasonlóképpen tiltott a mellékhatásos beépített eljárások, így az assert, retract, bb_put, bb_get stb. használata.
-A beadott programokat Linux környezetben SICStus Prolog 4 rendszerrel teszteljük.
