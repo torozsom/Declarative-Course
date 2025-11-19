@@ -90,8 +90,8 @@ apply_spiral_passes(FL, SpiralIn, SpiralOut) :-
     spiral_fixpoint(FL, SpiralIn, SpiralOut).
 
 
+% Előre + vissza spirál szűkítés és domain metszet ismétlés.
 spiral_fixpoint(FL, SpiralIn, SpiralOut) :-
-    % Előre + vissza spirál szűkítés és domain metszet ismétlés.
     tekercs_szukites(FL, SpiralIn, SpiralForward),
     reverse(SpiralIn, RevIn),
     tekercs_szukites_backward(FL, RevIn, RevNarrowed),
@@ -110,29 +110,32 @@ intersect_spiral_domains([A|As], [B|Bs], [R|Rs]) :-
     intersect_spiral_domains(As, Bs, Rs).
 
 
-intersect_domains(A, B, R) :-
 % Két teljesen konkretizált (szám) domain összevetése.
+intersect_domains(A, B, R) :-
     integer(A),
     integer(B),
     !,
     ( A =:= B -> R = A ; fail ).
 
-intersect_domains(A, B, R) :-
+
 % Szám vs lista domain metszése (szám benne van-e listában).
+intersect_domains(A, B, R) :-
     integer(A),
     is_list(B),
     !,
     ( ord_memberchk(A, B) -> R = A ; fail ).
 
-intersect_domains(A, B, R) :-
+
 % Lista vs szám domain metszése (szám benne van-e listában).
+intersect_domains(A, B, R) :-
     is_list(A),
     integer(B),
     !,
     ( ord_memberchk(B, A) -> R = B ; fail ).
 
-intersect_domains(A, B, R) :-
+
 % Két lista domain metszése; üres metszet esetén bukás.
+intersect_domains(A, B, R) :-
     is_list(A),
     is_list(B),
     ord_intersection(A, B, Intersect),
@@ -161,6 +164,7 @@ process_spiral_backward([PositionDomain|Rest], CycleLength,
     process_spiral_backward(Rest, CycleLength,
                             NextPositiveSetOut,
                             RestNarrowed).
+
 
 % Egy spirálpozíció domainjének leszűkítése visszafelé.
 shrink_position_backward(PositionDomain, CycleLength,
