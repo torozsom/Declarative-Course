@@ -28,7 +28,7 @@ solve_matrix(FL, Cycle, MatrixIn, MatrixSolved) :-
     Reduced \== [],
     (   solved_matrix(Reduced)
     ->  MatrixSolved = Reduced
-    ;   select_branch_cell(Reduced, R, C, Domain),
+    ;   select_branch_cell_heuristic(Reduced, R, C, Domain),
         domain_choice(Reduced, R, C, Domain, Cycle, Value),
         set_cell(Reduced, R, C, [Value], NextMatrix),
         solve_matrix(FL, Cycle, NextMatrix, MatrixSolved)
@@ -412,6 +412,40 @@ cell_can_still_be_positive(Cell) :-
     \+ (Cell = [Value], Value > 0),
     member(Value, Cell),
     Value > 0.
+
+
+select_branch_cell_heuristic(Matrix, R, C, Domain) :-
+    length(Matrix, N),
+    spiral_positions(N, Positions),
+    select_min_domain_cell(Matrix, Positions, R, C, Domain).
+
+
+select_min_domain_cell(Matrix, Positions, R, C, Domain) :-
+    Max is 10_000_000,
+    select_min_domain_cell(Matrix, Positions, Max, 0, 0, [], R, C, Domain).
+
+select_min_domain_cell(_, [], BestLen, BestR, BestC, BestDomain, BestR, BestC, BestDomain) :-
+    BestLen < 10_000_000.
+
+select_min_domain_cell(Matrix, [pos(R0,C0)|Rest], CurBestLen, CurBestR, CurBestC, CurBestDomain,
+                       R, C, Domain) :-
+    nth1(R0, Matrix, Row),
+    nth1(C0, Row, Cell),
+    (   is_list(Cell),
+        length(Cell, Len),
+        Len > 1,
+        Len < CurBestLen
+    ->  NewBestLen = Len,
+        NewBestR = R0,
+        NewBestC = C0,
+        NewBestDomain = Cell
+    ;   NewBestLen = CurBestLen,
+        NewBestR = CurBestR,
+        NewBestC = CurBestC,
+        NewBestDomain = CurBestDomain
+    ),
+    select_min_domain_cell(Matrix, Rest, NewBestLen, NewBestR, NewBestC, NewBestDomain,
+                           R, C, Domain).
 
 
 % Első többértékű domainű cella kiválasztása spirál sorrendben.
