@@ -10,6 +10,7 @@
 :- use_module(library(lists)).
 
 
+
 % Fő megoldó belépési pont: feladványból kész megoldást állít elő.
 % szamtekercs(+Feladvany, -Megoldas)
 szamtekercs(FL, Megoldas) :-
@@ -59,7 +60,8 @@ apply_one_restriction(FL, MatrixIn, MatrixOut) :-
         ;   Temp \== MatrixIn,
             MatrixOut = Temp
         )
-    ;   mxtekercs_szukites(FL, MatrixIn, MatrixOut)
+    ;   mxtekercs_szukites(FL, MatrixIn, MatrixOut),
+        MatrixOut \== MatrixIn
     ).
 
 
@@ -88,6 +90,11 @@ apply_spiral_passes(FL, SpiralIn, SpiralOut) :-
 
 % Előre + vissza spirál szűkítés és domain metszet ismétlés.
 spiral_fixpoint(FL, SpiralIn, SpiralOut) :-
+    spiral_fixpoint_iter(FL, SpiralIn, 0, SpiralOut).
+
+spiral_fixpoint_iter(_FL, SpiralIn, MaxIter, SpiralIn) :-
+    MaxIter >= 5, !.
+spiral_fixpoint_iter(FL, SpiralIn, Iter, SpiralOut) :-
     tekercs_szukites(FL, SpiralIn, SpiralForward),
     reverse(SpiralIn, RevIn),
     tekercs_szukites_backward(FL, RevIn, RevNarrowed),
@@ -95,7 +102,8 @@ spiral_fixpoint(FL, SpiralIn, SpiralOut) :-
     intersect_spiral_domains(SpiralForward, SpiralBackward, Combined),
     (   Combined == SpiralIn
     ->  SpiralOut = Combined
-    ;   spiral_fixpoint(FL, Combined, SpiralOut)
+    ;   NextIter is Iter + 1,
+        spiral_fixpoint_iter(FL, Combined, NextIter, SpiralOut)
     ).
 
 
@@ -242,210 +250,90 @@ cell_finalized([_]).
 % Heurisztikus választás a cella domainjéből (pozitív előnyben, különben 0).
 domain_choice(Matrix, R, C, Domain, Cycle, Value) :-
     include(pos_value, Domain, Positives),
-    (   Positives \= [],
-        expected_spiral_value(Matrix, R, C, Cycle, Expected),
-        member(Expected, Positives)
-    ->  CandidatePositives = [Expected]
-    ;   CandidatePositives = Positives
-    ),
-    CandidatePositives \= [],
-    score_positive_choices(Matrix, R, C, CandidatePositives, Scored),
-    member(_Score-Value, Scored).
+    Positives \= [],
+    length(Matrix, N),
+    spiral_positions(N, Positions),
+    count_spiral_positive_before(Positions, Matrix, R, C, Count),
+    ExpectedRem is Count mod Cycle,
+    ExpectedValue is ExpectedRem + 1,
+    % Try expected value first, then others
+    (   member(ExpectedValue, Positives),
+        Value = ExpectedValue
+    ;   member(Value, Positives),
+        Value \= ExpectedValue
+    ).
 domain_choice(Matrix, R, C, Domain, Cycle, 0) :-
     member(0, Domain),
-    zero_allowed(Matrix, R, C, Domain, Cycle).
+    % Simple check: ensure row and column have space for zeros
+    catch((
+        nth1(R, Matrix, Row),
+        get_column_values(Matrix, C, Column),
+        count_actual_zeros(Row, RowZeros),
+        count_actual_zeros(Column, ColZeros),
+        length(Row, RowLen),
+        ZeroQuota is RowLen - Cycle,
+        RowZeros < ZeroQuota,
+        ColZeros < ZeroQuota
+    ), _, true).
+
+% Count positive values before position (R,C) in spiral
+count_spiral_positive_before([], _, _, _, 0).
+count_spiral_positive_before([pos(R,C)|_], _Matrix, R, C, 0) :- !.
+count_spiral_positive_before([pos(Ri,Ci)|Rest], Matrix, R, C, Count) :-
+    nth1(Ri, Matrix, Row),
+    nth1(Ci, Row, Cell),
+    (   (integer(Cell), Cell > 0)
+    ->  count_spiral_positive_before(Rest, Matrix, R, C, RestCount),
+        Count is RestCount + 1
+    ;   (is_list(Cell), Cell = [V], V > 0)
+    ->  count_spiral_positive_before(Rest, Matrix, R, C, RestCount),
+        Count is RestCount + 1
+    ;   count_spiral_positive_before(Rest, Matrix, R, C, Count)
+    ).
+
+count_actual_zeros([], 0) :- !.
+count_actual_zeros([Cell|Rest], Count) :-
+    count_actual_zeros(Rest, RestCount),
+    (   (integer(Cell), Cell =:= 0)
+    ->  Count is RestCount + 1
+    ;   (is_list(Cell), Cell = [0])
+    ->  Count is RestCount + 1
+    ;   Count = RestCount
+    ), !.
 
 
 % Pozitív jelölt (0 kizárva).
 pos_value(V) :- V > 0.
 
 
-% Sor/oszlop előfordulásszám szorzata alapján rangsorol.
-score_positive_choices(Matrix, R, C, Positives, OrderedPairs) :-
-    nth1(R, Matrix, Row),
-    get_column_values(Matrix, C, Column),
-    findall(Score-Value,
-            ( member(Value, Positives),
-              row_value_statistics(Row, Value, RowCount, _, _),
-              column_value_statistics(Column, Value, ColCount, _, _),
-              Score is RowCount * ColCount
-            ),
-            Pairs),
-    keysort(Pairs, OrderedPairs).
-
-
-expected_spiral_value(Matrix, R, C, Cycle, Expected) :-
-    length(Matrix, N),
-    spiral_positions(N, Positions),
-    count_positive_before(Positions, Matrix, R, C, 0, Count),
-    Rem is Count mod Cycle,
-    Expected is Rem + 1.
-
-
-count_positive_before([], _, _, _, _, _) :-
-    fail.
-count_positive_before([pos(R,C)|_], _Matrix, R, C, Count, Count) :- !.
-count_positive_before([pos(Ri,Ci)|Rest], Matrix, R, C, CountIn, CountOut) :-
-    single_value(Matrix, Ri, Ci, Value),
-    (   Value > 0
-    ->  CountMid is CountIn + 1
-    ;   CountMid = CountIn
-    ),
-    count_positive_before(Rest, Matrix, R, C, CountMid, CountOut).
-
-
-single_value(Matrix, R, C, Value) :-
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell),
-    (   integer(Cell)
-    ->  Value = Cell
-    ;   Cell = [Value]
-    ).
-
-
-cell_domain_list(Matrix, R, C, Domain) :-
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell),
-    (   integer(Cell)
-    ->  Domain = [Cell]
-    ;   Domain = Cell
-    ).
-
-
-zero_allowed(Matrix, R, C, Domain, Cycle) :-
-    include(pos_value, Domain, Positives),
-    (   Positives = []
-    ->  true
-    ;   expected_spiral_value(Matrix, R, C, Cycle, Expected),
-        future_can_place(Matrix, R, C, Expected),
-        row_positive_slack(Matrix, R, Cycle),
-        column_positive_slack(Matrix, C, Cycle)
-    ).
-
-
-future_can_place(Matrix, R, C, Expected) :-
-    length(Matrix, N),
-    spiral_positions(N, Positions),
-    positions_after(Positions, R, C, Rest),
-    Rest \= [],
-    future_can_place_from(Rest, Matrix, Expected).
-
-
-positions_after([], _, _, []).
-positions_after([pos(R,C)|Rest], R, C, Rest) :- !.
-positions_after([_|Rest], R, C, Tail) :-
-    positions_after(Rest, R, C, Tail).
-
-
-future_can_place_from([], _, _) :- fail.
-future_can_place_from([pos(R,C)|Rest], Matrix, Expected) :-
-    cell_domain_list(Matrix, R, C, Domain),
-    include(pos_value, Domain, Positives),
-    (   Positives = []
-    ->  future_can_place_from(Rest, Matrix, Expected)
-    ;   member(Expected, Positives)
-    ->  true
-    ;   member(0, Domain)
-    ->  future_can_place_from(Rest, Matrix, Expected)
-    ;   fail
-    ).
-
-
-row_positive_slack(Matrix, R, Cycle) :-
-    row_positive_stats(Matrix, R, Cycle, Need, Capacity),
-    (   Need =< 0
-    ->  true
-    ;   Capacity > Need
-    ).
-
-
-column_positive_slack(Matrix, C, Cycle) :-
-    column_positive_stats(Matrix, C, Cycle, Need, Capacity),
-    (   Need =< 0
-    ->  true
-    ;   Capacity > Need
-    ).
-
-
-row_positive_stats(Matrix, R, Cycle, Need, Capacity) :-
-    nth1(R, Matrix, Row),
-    positive_stats_list(Row, Cycle, Need, Capacity).
-
-
-column_positive_stats(Matrix, C, Cycle, Need, Capacity) :-
-    get_column_values(Matrix, C, Column),
-    positive_stats_list(Column, Cycle, Need, Capacity).
-
-
-positive_stats_list(Cells, Cycle, Need, Capacity) :-
-    positive_stats_list(Cells, 0, 0, Assigned, Candidates),
-    Need is Cycle - Assigned,
-    Capacity = Candidates.
-
-
-positive_stats_list([], Assigned, Candidates, Assigned, Candidates).
-positive_stats_list([Cell|Rest], AccAssigned, AccCand, Assigned, Candidates) :-
-    (   cell_assigned_positive(Cell)
-    ->  NewAssigned is AccAssigned + 1,
-        NewCand = AccCand
-    ;   cell_can_still_be_positive(Cell)
-    ->  NewAssigned = AccAssigned,
-        NewCand is AccCand + 1
-    ;   NewAssigned = AccAssigned,
-        NewCand = AccCand
-    ),
-    positive_stats_list(Rest, NewAssigned, NewCand, Assigned, Candidates).
-
-
-cell_assigned_positive(Cell) :-
-    (   integer(Cell),
-        Cell > 0
-    )
-    ;   (   is_list(Cell),
-            Cell = [Value],
-            Value > 0
-        ).
-
-
-cell_can_still_be_positive(Cell) :-
-    is_list(Cell),
-    \+ (Cell = [Value], Value > 0),
-    member(Value, Cell),
-    Value > 0.
-
-
 select_branch_cell_heuristic(Matrix, R, C, Domain) :-
     length(Matrix, N),
     spiral_positions(N, Positions),
-    select_min_domain_cell(Matrix, Positions, R, C, Domain).
+    select_min_domain_cell_fast(Matrix, Positions, R, C, Domain).
 
 
-select_min_domain_cell(Matrix, Positions, R, C, Domain) :-
-    Max is 10_000_000,
-    select_min_domain_cell(Matrix, Positions, Max, 0, 0, [], R, C, Domain).
+select_min_domain_cell_fast(Matrix, Positions, R, C, Domain) :-
+    select_min_domain_cell_fast_(Matrix, Positions, 100, 0, 0, [], R, C, Domain).
 
-select_min_domain_cell(_, [], BestLen, BestR, BestC, BestDomain, BestR, BestC, BestDomain) :-
-    BestLen < 10_000_000.
+select_min_domain_cell_fast_(_, [], BestLen, BestR, BestC, BestDomain, BestR, BestC, BestDomain) :-
+    BestLen < 100.
 
-select_min_domain_cell(Matrix, [pos(R0,C0)|Rest], CurBestLen, CurBestR, CurBestC, CurBestDomain,
+select_min_domain_cell_fast_(Matrix, [pos(R0,C0)|Rest], CurBestLen, CurBestR, CurBestC, CurBestDomain,
                        R, C, Domain) :-
     nth1(R0, Matrix, Row),
     nth1(C0, Row, Cell),
     (   is_list(Cell),
         length(Cell, Len),
-        Len > 1,
-        Len < CurBestLen
-    ->  NewBestLen = Len,
-        NewBestR = R0,
-        NewBestC = C0,
-        NewBestDomain = Cell
-    ;   NewBestLen = CurBestLen,
-        NewBestR = CurBestR,
-        NewBestC = CurBestC,
-        NewBestDomain = CurBestDomain
-    ),
-    select_min_domain_cell(Matrix, Rest, NewBestLen, NewBestR, NewBestC, NewBestDomain,
-                           R, C, Domain).
+        Len > 1
+    ->  (   Len < CurBestLen
+        ->  (   Len =:= 2
+            ->  R = R0, C = C0, Domain = Cell
+            ;   select_min_domain_cell_fast_(Matrix, Rest, Len, R0, C0, Cell, R, C, Domain)
+            )
+        ;   select_min_domain_cell_fast_(Matrix, Rest, CurBestLen, CurBestR, CurBestC, CurBestDomain, R, C, Domain)
+        )
+    ;   select_min_domain_cell_fast_(Matrix, Rest, CurBestLen, CurBestR, CurBestC, CurBestDomain, R, C, Domain)
+    ).
 
 
 % Első többértékű domainű cella kiválasztása spirál sorrendben.
@@ -1159,14 +1047,6 @@ narrow_zeros_to_singleton_in_column([Row|RestRows], ColumnIndex, [RowOut|RestOut
     ; RowOut = Row
     ),
     narrow_zeros_to_singleton_in_column(RestRows, ColumnIndex, RestOut).
-% ---- Beépített Khf7 kód ----
-% ------------------------------------------------------------
-% Khf7 – Számtekercs: számtekercs szűkítése
-%
-% @author "Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]"
-% @date   "2025-11-19" 
-% ------------------------------------------------------------
-
 
 
 % tekercs_szukites(+PuzzleDescriptor, +SpiralLine, -NarrowedSpiralLine)
@@ -1174,7 +1054,6 @@ tekercs_szukites(szt(_, CycleLength, _), SpiralLine, NarrowedSpiralLine) :-
 	SpiralLine \= [],
 	process_spiral(SpiralLine, CycleLength, [CycleLength], NarrowedSpiralLine),
 	!.
-
 
 
 % process_spiral(+SpiralList, +CycleLength, +PrevLastPositiveSet, -ResultList)
