@@ -18,19 +18,12 @@
 
 %% tekercs(+PuzzleDescriptor, -Solution)
 %
-% Alias a szamtekercs/2 predikátumhoz a kompatibilitás érdekében.
-%
-tekercs(PuzzleDescriptor, Solution) :-
-    szamtekercs(PuzzleDescriptor, Solution).
-
-%% szamtekercs(+PuzzleDescriptor, -Solution)
-%
 % Fő belépési pont: a feladványleíróból előállítja a megoldást.
 % A PuzzleDescriptor formátuma: szt(BoardSize, CycleLength, GivenElements)
 % ahol GivenElements az i(Row, Col, Value) elemek listája.
 % A Solution egy listák listája, ahol minden belső lista egy sor értékeit tartalmazza.
 %
-szamtekercs(PuzzleDescriptor, Solution) :-
+tekercs(PuzzleDescriptor, Solution) :-
     kezdotabla(PuzzleDescriptor, InitialMatrix),
     PuzzleDescriptor = szt(BoardSize, CycleLength, GivenElements),
     spiral_positions(BoardSize, SpiralPositions),
