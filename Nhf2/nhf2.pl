@@ -1,13 +1,16 @@
 % ------------------------------------------------------------
-% Nhf2 - Számtekercs feladvány
+% Nhf2 - Számtekercs feladvány (Number Spiral Puzzle)
+%
+% A feladvány egy n*n méretű négyzettáblán az 1..m számok elhelyezését
+% kéri úgy, hogy minden sorban és oszlopban minden szám pontosan egyszer
+% szerepeljen, és a bal felső sarokból induló spirál mentén a számok
+% az 1,2,...,m,1,2,...,m,... sorrendben kövessék egymást.
 %
 % Author: Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]
 % Date:   2025-11-30
 % ------------------------------------------------------------
 
-
 :- use_module(library(lists)).
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% FŐ BELÉPÉSI PONT
@@ -15,12 +18,19 @@
 
 %% tekercs(+PuzzleDescriptor, -Solution)
 %
+% Alias a szamtekercs/2 predikátumhoz a kompatibilitás érdekében.
+%
+tekercs(PuzzleDescriptor, Solution) :-
+    szamtekercs(PuzzleDescriptor, Solution).
+
+%% szamtekercs(+PuzzleDescriptor, -Solution)
+%
 % Fő belépési pont: a feladványleíróból előállítja a megoldást.
 % A PuzzleDescriptor formátuma: szt(BoardSize, CycleLength, GivenElements)
 % ahol GivenElements az i(Row, Col, Value) elemek listája.
 % A Solution egy listák listája, ahol minden belső lista egy sor értékeit tartalmazza.
 %
-tekercs(PuzzleDescriptor, Solution) :-
+szamtekercs(PuzzleDescriptor, Solution) :-
     kezdotabla(PuzzleDescriptor, InitialMatrix),
     PuzzleDescriptor = szt(BoardSize, CycleLength, GivenElements),
     spiral_positions(BoardSize, SpiralPositions),
