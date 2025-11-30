@@ -1,8 +1,8 @@
 % ------------------------------------------------------------
-% Nhf2 - Számtekercs végső megoldó
+% Nhf2 - Számtekercs feladvány
 %
-% A feladat megoldásához felhasználom a korábbi kis házikban
-% elkészített szűkítéseket (Khf5, Khf6, Khf7).
+% Author: Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]
+% Date:   2025-11-30
 % ------------------------------------------------------------
 
 
@@ -11,7 +11,7 @@
 
 
 
-% Fő megoldó belépési pont: feladványból kész megoldást állít elő.
+% Belépési pont: a feladványból kész megoldást állít elő.
 % szamtekercs(+Feladvany, -Megoldas)
 szamtekercs(FL, Megoldas) :-
     kezdotabla(FL, Matrix0),
