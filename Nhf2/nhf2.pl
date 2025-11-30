@@ -15,26 +15,180 @@
 % szamtekercs(+Feladvany, -Megoldas)
 szamtekercs(FL, Megoldas) :-
     kezdotabla(FL, Matrix0),
-    FL = szt(N, Cycle, _),
+    FL = szt(N, Cycle, Adottak),
     spiral_positions(N, SpiralPos),
-    solve_matrix(FL, Cycle, SpiralPos, Matrix0, MatrixSolved),
+    % Build forced positions map
+    build_forced_map(Adottak, SpiralPos, ForcedMap),
+    % Use spiral-based solver
+    solve_spiral_dfs(FL, Cycle, N, SpiralPos, ForcedMap, Matrix0, MatrixSolved),
     matrix_to_solution(MatrixSolved, Megoldas).
 
 
+% Build a map of spiral index -> forced value
+build_forced_map(Adottak, SpiralPos, ForcedMap) :-
+    length(SpiralPos, Len),
+    functor(ForcedMap, forced, Len),
+    init_forced_map(1, Len, ForcedMap),
+    fill_forced_map(Adottak, SpiralPos, ForcedMap).
 
-% Rekurzív kereső: szűkít, majd visszalépéssel kitölti a táblát.
-% solve_matrix(+FL,+Cycle,+SpiralPos,+MatrixIn,-MatrixSolved)
-solve_matrix(_, _, _, [], _) :- !, fail.
-solve_matrix(FL, Cycle, SpiralPos, MatrixIn, MatrixSolved) :-
+init_forced_map(I, Len, _) :- I > Len, !.
+init_forced_map(I, Len, Map) :-
+    arg(I, Map, 0),
+    I1 is I + 1,
+    init_forced_map(I1, Len, Map).
+
+fill_forced_map([], _, _).
+fill_forced_map([i(R,C,V)|Rest], SpiralPos, Map) :-
+    spiral_index(SpiralPos, R, C, 1, Idx),
+    setarg(Idx, Map, V),
+    fill_forced_map(Rest, SpiralPos, Map).
+
+spiral_index([pos(R,C)|_], R, C, Idx, Idx) :- !.
+spiral_index([_|Rest], R, C, Acc, Idx) :-
+    Acc1 is Acc + 1,
+    spiral_index(Rest, R, C, Acc1, Idx).
+
+
+% Spiral-based DFS solver
+solve_spiral_dfs(FL, Cycle, N, SpiralPos, ForcedMap, MatrixIn, MatrixSolved) :-
+    % First do initial propagation
     propagate_all(FL, SpiralPos, MatrixIn, Reduced),
     Reduced \== [],
-    (   solved_matrix(Reduced)
-    ->  MatrixSolved = Reduced
-    ;   select_branch_cell_heuristic(Reduced, SpiralPos, R, C, Domain),
-        domain_choice_simple(Domain, Cycle, Value),
-        set_cell(Reduced, R, C, [Value], NextMatrix),
-        solve_matrix(FL, Cycle, SpiralPos, NextMatrix, MatrixSolved)
-    ).
+    % Then do direct spiral search
+    ZeroQuota is N - Cycle,
+    length(SpiralPos, TotalCells),
+    TotalRequired is N * Cycle,
+    dfs_spiral(1, 0, Reduced, SpiralPos, ForcedMap, Cycle, N, ZeroQuota, TotalCells, TotalRequired, MatrixSolved).
+
+
+% dfs_spiral(+Idx, +PlacedCount, +Matrix, +SpiralPos, +ForcedMap, +Cycle, +N, +ZeroQuota, +TotalCells, +TotalRequired, -Solution)
+dfs_spiral(Idx, PlacedCount, Matrix, _SpiralPos, _ForcedMap, Cycle, N, _ZeroQuota, TotalCells, TotalRequired, Matrix) :-
+    Idx > TotalCells,
+    !,
+    PlacedCount =:= TotalRequired,
+    check_row_col_counts(Matrix, N, Cycle).
+
+dfs_spiral(Idx, PlacedCount, Matrix, SpiralPos, ForcedMap, Cycle, N, ZeroQuota, TotalCells, TotalRequired, Solution) :-
+    Idx =< TotalCells,
+    % Global capacity check
+    Remaining is TotalCells - Idx + 1,
+    RemainingNeeded is TotalRequired - PlacedCount,
+    Remaining >= RemainingNeeded,
+    % Get current position
+    nth1(Idx, SpiralPos, pos(R,C)),
+    nth1(R, Matrix, Row),
+    nth1(C, Row, Cell),
+    % Get forced value (if any)
+    arg(Idx, ForcedMap, ForcedVal),
+    % Compute expected next value
+    NextVal is (PlacedCount mod Cycle) + 1,
+    % Try placing or skipping - use backtracking
+    try_place_bt(Cell, ForcedVal, NextVal, R, C, Matrix, Cycle, ZeroQuota, NewMatrix, NewPlacedCount, PlacedCount),
+    NextIdx is Idx + 1,
+    dfs_spiral(NextIdx, NewPlacedCount, NewMatrix, SpiralPos, ForcedMap, Cycle, N, ZeroQuota, TotalCells, TotalRequired, Solution).
+
+
+% Try to place a value or skip (0) - with backtracking
+% Fixed integer cell
+try_place_bt(Cell, ForcedVal, NextVal, _R, _C, Matrix, _Cycle, _ZeroQuota, Matrix, NewPlacedCount, PlacedCount) :-
+    integer(Cell),
+    Cell > 0,
+    !,
+    Cell =:= NextVal,
+    (ForcedVal =:= 0 ; ForcedVal =:= Cell),
+    NewPlacedCount is PlacedCount + 1.
+
+try_place_bt(Cell, ForcedVal, _NextVal, _R, _C, Matrix, _Cycle, _ZeroQuota, Matrix, PlacedCount, PlacedCount) :-
+    integer(Cell),
+    Cell =:= 0,
+    !,
+    ForcedVal =:= 0.
+
+% Singleton list cell
+try_place_bt([SingleVal], ForcedVal, NextVal, R, C, Matrix, _Cycle, _ZeroQuota, NewMatrix, NewPlacedCount, PlacedCount) :-
+    SingleVal > 0,
+    !,
+    SingleVal =:= NextVal,
+    (ForcedVal =:= 0 ; ForcedVal =:= SingleVal),
+    set_cell(Matrix, R, C, SingleVal, NewMatrix),
+    NewPlacedCount is PlacedCount + 1.
+
+try_place_bt([0], ForcedVal, _NextVal, R, C, Matrix, _Cycle, _ZeroQuota, NewMatrix, PlacedCount, PlacedCount) :-
+    !,
+    ForcedVal =:= 0,
+    set_cell(Matrix, R, C, 0, NewMatrix).
+
+% Multi-value domain - try placing NextVal
+try_place_bt(Cell, ForcedVal, NextVal, R, C, Matrix, Cycle, _ZeroQuota, NewMatrix, NewPlacedCount, PlacedCount) :-
+    is_list(Cell),
+    length(Cell, L), L > 1,
+    (ForcedVal =:= 0 ; ForcedVal =:= NextVal),
+    member(NextVal, Cell),
+    can_place_value(Matrix, R, C, NextVal, Cycle),
+    set_cell(Matrix, R, C, NextVal, NewMatrix),
+    NewPlacedCount is PlacedCount + 1.
+
+% Multi-value domain - try placing 0
+try_place_bt(Cell, ForcedVal, _NextVal, R, C, Matrix, _Cycle, ZeroQuota, NewMatrix, PlacedCount, PlacedCount) :-
+    is_list(Cell),
+    length(Cell, L), L > 1,
+    ForcedVal =:= 0,
+    member(0, Cell),
+    can_place_zero(Matrix, R, C, ZeroQuota),
+    set_cell(Matrix, R, C, 0, NewMatrix).
+
+
+% Check if we can place a positive value in this row/column
+can_place_value(Matrix, R, C, Val, Cycle) :-
+    nth1(R, Matrix, Row),
+    \+ value_in_line(Row, Val),
+    get_column_values(Matrix, C, Col),
+    \+ value_in_line(Col, Val),
+    count_positive_in_line(Row, RowPos),
+    RowPos < Cycle,
+    count_positive_in_line(Col, ColPos),
+    ColPos < Cycle.
+
+value_in_line([], _) :- !, fail.
+value_in_line([Cell|_], Val) :- integer(Cell), Cell =:= Val, !.
+value_in_line([[V]|_], Val) :- V =:= Val, !.
+value_in_line([_|Rest], Val) :- value_in_line(Rest, Val).
+
+count_positive_in_line(Line, Count) :-
+    count_positive_in_line_(Line, 0, Count).
+count_positive_in_line_([], Acc, Acc).
+count_positive_in_line_([Cell|Rest], Acc, Count) :-
+    (   (integer(Cell), Cell > 0 ; Cell = [V], V > 0)
+    ->  Acc1 is Acc + 1
+    ;   Acc1 = Acc
+    ),
+    count_positive_in_line_(Rest, Acc1, Count).
+
+
+% Check if we can place a zero in this row/column
+can_place_zero(Matrix, R, C, ZeroQuota) :-
+    nth1(R, Matrix, Row),
+    count_zeros_in_line(Row, RowZeros),
+    RowZeros < ZeroQuota,
+    get_column_values(Matrix, C, Col),
+    count_zeros_in_line(Col, ColZeros),
+    ColZeros < ZeroQuota.
+
+count_zeros_in_line(Line, Count) :-
+    count_zeros_in_line_(Line, 0, Count).
+count_zeros_in_line_([], Acc, Acc).
+count_zeros_in_line_([Cell|Rest], Acc, Count) :-
+    (   (integer(Cell), Cell =:= 0 ; Cell = [0])
+    ->  Acc1 is Acc + 1
+    ;   Acc1 = Acc
+    ),
+    count_zeros_in_line_(Rest, Acc1, Count).
+
+
+% Check final solution has correct row/column counts
+check_row_col_counts(Matrix, N, Cycle) :-
+    forall(between(1, N, R), (nth1(R, Matrix, Row), count_positive_in_line(Row, Cycle))),
+    forall(between(1, N, C), (get_column_values(Matrix, C, Col), count_positive_in_line(Col, Cycle))).
 
 
 % Szűkítések ismételt alkalmazása fixpontig.
@@ -245,13 +399,13 @@ cell_finalized([_]).
 
 
 % Egyszerűsített heurisztikus választás a cella domainjéből
-% Először 0-t próbál, utána pozitív értékeket
-domain_choice_simple(Domain, _Cycle, 0) :-
-    member(0, Domain).
+% Először pozitív értékeket próbál, utána 0-t
 domain_choice_simple(Domain, _Cycle, Value) :-
     include(pos_value, Domain, Positives),
     Positives \= [],
     member(Value, Positives).
+domain_choice_simple(Domain, _Cycle, 0) :-
+    member(0, Domain).
 
 
 % Pozitív jelölt (0 kizárva).
