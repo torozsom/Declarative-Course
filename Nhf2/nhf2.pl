@@ -1,10 +1,5 @@
 % ------------------------------------------------------------
-% Nhf2 - Számtekercs feladvány (Number Spiral Puzzle)
-%
-% A feladvány egy n*n méretű négyzettáblán az 1..m számok elhelyezését
-% kéri úgy, hogy minden sorban és oszlopban minden szám pontosan egyszer
-% szerepeljen, és a bal felső sarokból induló spirál mentén a számok
-% az 1,2,...,m,1,2,...,m,... sorrendben kövessék egymást.
+% Nhf2 - Számtekercs feladvány
 %
 % Author: Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]
 % Date:   2025-11-30
