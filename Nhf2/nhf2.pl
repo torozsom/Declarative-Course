@@ -1,673 +1,728 @@
 % ------------------------------------------------------------
-% Nhf2 - Számtekercs feladvány
+% Nhf2 - Számtekercs feladvány (Number Spiral Puzzle)
+%
+% A feladvány egy n*n méretű négyzettáblán az 1..m számok elhelyezését
+% kéri úgy, hogy minden sorban és oszlopban minden szám pontosan egyszer
+% szerepeljen, és a bal felső sarokból induló spirál mentén a számok
+% az 1,2,...,m,1,2,...,m,... sorrendben kövessék egymást.
 %
 % Author: Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]
 % Date:   2025-11-30
 % ------------------------------------------------------------
 
-
-
 :- use_module(library(lists)).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% FŐ BELÉPÉSI PONT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% szamtekercs(+PuzzleDescriptor, -Solution)
+%
+% Fő belépési pont: a feladványleíróból előállítja a megoldást.
+% A PuzzleDescriptor formátuma: szt(BoardSize, CycleLength, GivenElements)
+% ahol GivenElements az i(Row, Col, Value) elemek listája.
+% A Solution egy listák listája, ahol minden belső lista egy sor értékeit tartalmazza.
+%
+szamtekercs(PuzzleDescriptor, Solution) :-
+    kezdotabla(PuzzleDescriptor, InitialMatrix),
+    PuzzleDescriptor = szt(BoardSize, CycleLength, GivenElements),
+    spiral_positions(BoardSize, SpiralPositions),
+    % Kényszerített értékek térképének felépítése
+    build_forced_map(GivenElements, SpiralPositions, ForcedValueMap),
+    % Spirál-alapú DFS megoldó használata
+    solve_spiral_dfs(PuzzleDescriptor, CycleLength, BoardSize, SpiralPositions, 
+                     ForcedValueMap, InitialMatrix, SolvedMatrix),
+    matrix_to_solution(SolvedMatrix, Solution).
 
 
-% Belépési pont: a feladványból kész megoldást állít elő.
-% szamtekercs(+Feladvany, -Megoldas)
-szamtekercs(FL, Megoldas) :-
-    kezdotabla(FL, Matrix0),
-    FL = szt(N, Cycle, Adottak),
-    spiral_positions(N, SpiralPos),
-    % Build forced positions map
-    build_forced_map(Adottak, SpiralPos, ForcedMap),
-    % Use spiral-based solver
-    solve_spiral_dfs(FL, Cycle, N, SpiralPos, ForcedMap, Matrix0, MatrixSolved),
-    matrix_to_solution(MatrixSolved, Megoldas).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% KÉNYSZERÍTETT ÉRTÉKEK TÉRKÉPE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%% build_forced_map(+GivenElements, +SpiralPositions, -ForcedValueMap)
+%
+% Felépít egy térképet, amely a spirál indexekhez rendeli a kényszerített értékeket.
+% Ha egy pozícióra nincs megadott érték, akkor 0-t tárol.
+%
+build_forced_map(GivenElements, SpiralPositions, ForcedValueMap) :-
+    length(SpiralPositions, TotalPositions),
+    functor(ForcedValueMap, forced, TotalPositions),
+    init_forced_map(1, TotalPositions, ForcedValueMap),
+    fill_forced_map(GivenElements, SpiralPositions, ForcedValueMap).
 
-% Build a map of spiral index -> forced value
-build_forced_map(Adottak, SpiralPos, ForcedMap) :-
-    length(SpiralPos, Len),
-    functor(ForcedMap, forced, Len),
-    init_forced_map(1, Len, ForcedMap),
-    fill_forced_map(Adottak, SpiralPos, ForcedMap).
+% Inicializálja a kényszerített értékek térképét 0 értékekkel.
+init_forced_map(CurrentIndex, TotalPositions, _ForcedValueMap) :- 
+    CurrentIndex > TotalPositions, !.
+init_forced_map(CurrentIndex, TotalPositions, ForcedValueMap) :-
+    arg(CurrentIndex, ForcedValueMap, 0),
+    NextIndex is CurrentIndex + 1,
+    init_forced_map(NextIndex, TotalPositions, ForcedValueMap).
 
-init_forced_map(I, Len, _) :- I > Len, !.
-init_forced_map(I, Len, Map) :-
-    arg(I, Map, 0),
-    I1 is I + 1,
-    init_forced_map(I1, Len, Map).
-
+% Feltölti a térképet az adott elemek értékeivel.
 fill_forced_map([], _, _).
-fill_forced_map([i(R,C,V)|Rest], SpiralPos, Map) :-
-    spiral_index(SpiralPos, R, C, 1, Idx),
-    setarg(Idx, Map, V),
-    fill_forced_map(Rest, SpiralPos, Map).
+fill_forced_map([i(Row, Col, Value)|RestElements], SpiralPositions, ForcedValueMap) :-
+    spiral_index(SpiralPositions, Row, Col, 1, SpiralIndex),
+    setarg(SpiralIndex, ForcedValueMap, Value),
+    fill_forced_map(RestElements, SpiralPositions, ForcedValueMap).
 
-spiral_index([pos(R,C)|_], R, C, Idx, Idx) :- !.
-spiral_index([_|Rest], R, C, Acc, Idx) :-
-    Acc1 is Acc + 1,
-    spiral_index(Rest, R, C, Acc1, Idx).
-
-
-% Spiral-based DFS solver
-solve_spiral_dfs(FL, Cycle, N, SpiralPos, ForcedMap, MatrixIn, MatrixSolved) :-
-    % First do initial propagation
-    propagate_all(FL, SpiralPos, MatrixIn, Reduced),
-    Reduced \== [],
-    % Then do direct spiral search
-    ZeroQuota is N - Cycle,
-    length(SpiralPos, TotalCells),
-    TotalRequired is N * Cycle,
-    dfs_spiral(1, 0, Reduced, SpiralPos, ForcedMap, Cycle, N, ZeroQuota, TotalCells, TotalRequired, MatrixSolved).
+% Megkeresi egy (Row, Col) pozíció spirál-indexét.
+spiral_index([pos(Row, Col)|_], Row, Col, CurrentIndex, CurrentIndex) :- !.
+spiral_index([_|RestPositions], Row, Col, CurrentIndex, SpiralIndex) :-
+    NextIndex is CurrentIndex + 1,
+    spiral_index(RestPositions, Row, Col, NextIndex, SpiralIndex).
 
 
-% dfs_spiral(+Idx, +PlacedCount, +Matrix, +SpiralPos, +ForcedMap, +Cycle, +N, +ZeroQuota, +TotalCells, +TotalRequired, -Solution)
-dfs_spiral(Idx, PlacedCount, Matrix, _SpiralPos, _ForcedMap, Cycle, N, _ZeroQuota, TotalCells, TotalRequired, Matrix) :-
-    Idx > TotalCells,
-    !,
-    PlacedCount =:= TotalRequired,
-    check_row_col_counts(Matrix, N, Cycle).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% SPIRÁL-ALAPÚ MÉLYSÉGI KERESÉS (DFS)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-dfs_spiral(Idx, PlacedCount, Matrix, SpiralPos, ForcedMap, Cycle, N, ZeroQuota, TotalCells, TotalRequired, Solution) :-
-    Idx =< TotalCells,
-    % Global capacity check
-    Remaining is TotalCells - Idx + 1,
-    RemainingNeeded is TotalRequired - PlacedCount,
-    Remaining >= RemainingNeeded,
-    % Get current position
-    nth1(Idx, SpiralPos, pos(R,C)),
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell),
-    % Get forced value (if any)
-    arg(Idx, ForcedMap, ForcedVal),
-    % Compute expected next value
-    NextVal is (PlacedCount mod Cycle) + 1,
-    % Try placing or skipping - use backtracking
-    try_place_bt(Cell, ForcedVal, NextVal, R, C, Matrix, Cycle, ZeroQuota, NewMatrix, NewPlacedCount, PlacedCount),
-    NextIdx is Idx + 1,
-    dfs_spiral(NextIdx, NewPlacedCount, NewMatrix, SpiralPos, ForcedMap, Cycle, N, ZeroQuota, TotalCells, TotalRequired, Solution).
+%% solve_spiral_dfs(+PuzzleDescriptor, +CycleLength, +BoardSize, +SpiralPositions,
+%%                  +ForcedValueMap, +MatrixIn, -SolvedMatrix)
+%
+% Spirál-alapú mélységi keresés (DFS) a feladványhoz.
+% Először propagációt végez a szűkítésekhez, majd mélységi kereséssel oldja meg.
+%
+solve_spiral_dfs(PuzzleDescriptor, CycleLength, BoardSize, SpiralPositions, 
+                 ForcedValueMap, MatrixIn, SolvedMatrix) :-
+    % Első lépés: kezdeti propagáció
+    propagate_all(PuzzleDescriptor, SpiralPositions, MatrixIn, ReducedMatrix),
+    ReducedMatrix \== [],
+    % Közvetlen spirál keresés
+    ZerosPerLine is BoardSize - CycleLength,
+    length(SpiralPositions, TotalCells),
+    TotalPositiveRequired is BoardSize * CycleLength,
+    dfs_spiral(1, 0, ReducedMatrix, SpiralPositions, ForcedValueMap, CycleLength, BoardSize, 
+               ZerosPerLine, TotalCells, TotalPositiveRequired, SolvedMatrix).
 
 
-% Try to place a value or skip (0) - with backtracking
-% Fixed integer cell
-try_place_bt(Cell, ForcedVal, NextVal, _R, _C, Matrix, _Cycle, _ZeroQuota, Matrix, NewPlacedCount, PlacedCount) :-
-    integer(Cell),
-    Cell > 0,
-    !,
-    Cell =:= NextVal,
-    (ForcedVal =:= 0 ; ForcedVal =:= Cell),
-    NewPlacedCount is PlacedCount + 1.
+%% dfs_spiral/11
+%
+% Mélységi keresés a spirál mentén. Visszalépéses algoritmus, amely minden
+% pozícióra megpróbálja elhelyezni a soron következő értéket vagy 0-t.
+%
+% Alap eset: minden pozíciót bejártunk
+dfs_spiral(CurrentIndex, PlacedCount, Matrix, _SpiralPositions, _ForcedValueMap, 
+           CycleLength, BoardSize, _ZerosPerLine, TotalCells, TotalPositiveRequired, Matrix) :-
+    CurrentIndex > TotalCells, !,
+    PlacedCount =:= TotalPositiveRequired,
+    check_row_col_counts(Matrix, BoardSize, CycleLength).
 
-try_place_bt(Cell, ForcedVal, _NextVal, _R, _C, Matrix, _Cycle, _ZeroQuota, Matrix, PlacedCount, PlacedCount) :-
-    integer(Cell),
-    Cell =:= 0,
-    !,
-    ForcedVal =:= 0.
-
-% Singleton list cell
-try_place_bt([SingleVal], ForcedVal, NextVal, R, C, Matrix, _Cycle, _ZeroQuota, NewMatrix, NewPlacedCount, PlacedCount) :-
-    SingleVal > 0,
-    !,
-    SingleVal =:= NextVal,
-    (ForcedVal =:= 0 ; ForcedVal =:= SingleVal),
-    set_cell(Matrix, R, C, SingleVal, NewMatrix),
-    NewPlacedCount is PlacedCount + 1.
-
-try_place_bt([0], ForcedVal, _NextVal, R, C, Matrix, _Cycle, _ZeroQuota, NewMatrix, PlacedCount, PlacedCount) :-
-    !,
-    ForcedVal =:= 0,
-    set_cell(Matrix, R, C, 0, NewMatrix).
-
-% Multi-value domain - try placing NextVal
-try_place_bt(Cell, ForcedVal, NextVal, R, C, Matrix, Cycle, _ZeroQuota, NewMatrix, NewPlacedCount, PlacedCount) :-
-    is_list(Cell),
-    length(Cell, L), L > 1,
-    (ForcedVal =:= 0 ; ForcedVal =:= NextVal),
-    member(NextVal, Cell),
-    can_place_value(Matrix, R, C, NextVal, Cycle),
-    set_cell(Matrix, R, C, NextVal, NewMatrix),
-    NewPlacedCount is PlacedCount + 1.
-
-% Multi-value domain - try placing 0
-try_place_bt(Cell, ForcedVal, _NextVal, R, C, Matrix, _Cycle, ZeroQuota, NewMatrix, PlacedCount, PlacedCount) :-
-    is_list(Cell),
-    length(Cell, L), L > 1,
-    ForcedVal =:= 0,
-    member(0, Cell),
-    can_place_zero(Matrix, R, C, ZeroQuota),
-    set_cell(Matrix, R, C, 0, NewMatrix).
+% Rekurzív eset: feldolgozzuk a következő pozíciót
+dfs_spiral(CurrentIndex, PlacedCount, Matrix, SpiralPositions, ForcedValueMap, 
+           CycleLength, BoardSize, ZerosPerLine, TotalCells, TotalPositiveRequired, Solution) :-
+    CurrentIndex =< TotalCells,
+    % Globális kapacitás ellenőrzés - van-e elég hely a fennmaradó számoknak
+    RemainingPositions is TotalCells - CurrentIndex + 1,
+    RemainingNeeded is TotalPositiveRequired - PlacedCount,
+    RemainingPositions >= RemainingNeeded,
+    % Aktuális pozíció és cella lekérése
+    nth1(CurrentIndex, SpiralPositions, pos(Row, Col)),
+    nth1(Row, Matrix, RowValues),
+    nth1(Col, RowValues, CellDomain),
+    % Kényszerített érték lekérése (ha van)
+    arg(CurrentIndex, ForcedValueMap, ForcedValue),
+    % A spirálban következő elvárt érték kiszámítása
+    ExpectedNextValue is (PlacedCount mod CycleLength) + 1,
+    % Érték elhelyezése vagy kihagyás visszalépéssel
+    try_place_bt(CellDomain, ForcedValue, ExpectedNextValue, Row, Col, Matrix, CycleLength, 
+                 ZerosPerLine, UpdatedMatrix, NewPlacedCount, PlacedCount),
+    NextIndex is CurrentIndex + 1,
+    dfs_spiral(NextIndex, NewPlacedCount, UpdatedMatrix, SpiralPositions, ForcedValueMap, 
+               CycleLength, BoardSize, ZerosPerLine, TotalCells, TotalPositiveRequired, Solution).
 
 
-% Check if we can place a positive value in this row/column
-can_place_value(Matrix, R, C, Val, Cycle) :-
-    nth1(R, Matrix, Row),
-    \+ value_in_line(Row, Val),
-    get_column_values(Matrix, C, Col),
-    \+ value_in_line(Col, Val),
-    count_positive_in_line(Row, RowPos),
-    RowPos < Cycle,
-    count_positive_in_line(Col, ColPos),
-    ColPos < Cycle.
+%% try_place_bt/11
+%
+% Megpróbál értéket elhelyezni vagy 0-t, visszalépéssel.
+% Különböző esetek: rögzített szám, egyelemű lista, többelemű domain.
+%
 
+% Eset 1: Rögzített pozitív egész szám cellában
+try_place_bt(CellValue, ForcedValue, ExpectedValue, _Row, _Col, Matrix,
+             _CycleLength, _ZerosPerLine, Matrix, NewPlacedCount, CurrentPlacedCount) :-
+    integer(CellValue),
+    CellValue > 0, !,
+    CellValue =:= ExpectedValue,
+    (ForcedValue =:= 0 ; ForcedValue =:= CellValue),
+    NewPlacedCount is CurrentPlacedCount + 1.
+
+% Eset 2: Rögzített nulla cellában
+try_place_bt(CellValue, ForcedValue, _ExpectedValue, _Row, _Col, Matrix,
+             _CycleLength, _ZerosPerLine, Matrix, CurrentPlacedCount, CurrentPlacedCount) :-
+    integer(CellValue),
+    CellValue =:= 0, !,
+    ForcedValue =:= 0.
+
+% Eset 3: Egyelemű lista pozitív értékkel
+try_place_bt([SingleValue], ForcedValue, ExpectedValue, Row, Col, Matrix,
+             _CycleLength, _ZerosPerLine, UpdatedMatrix, NewPlacedCount, CurrentPlacedCount) :-
+    SingleValue > 0, !,
+    SingleValue =:= ExpectedValue,
+    (ForcedValue =:= 0 ; ForcedValue =:= SingleValue),
+    set_cell(Matrix, Row, Col, SingleValue, UpdatedMatrix),
+    NewPlacedCount is CurrentPlacedCount + 1.
+
+% Eset 4: Egyelemű lista nullával
+try_place_bt([0], ForcedValue, _ExpectedValue, Row, Col, Matrix,
+             _CycleLength, _ZerosPerLine, UpdatedMatrix, CurrentPlacedCount, CurrentPlacedCount) :- !,
+    ForcedValue =:= 0,
+    set_cell(Matrix, Row, Col, 0, UpdatedMatrix).
+
+% Eset 5: Többelemű domain - pozitív érték elhelyezése
+try_place_bt(CellDomain, ForcedValue, ExpectedValue, Row, Col, Matrix,
+             CycleLength, _ZerosPerLine, UpdatedMatrix, NewPlacedCount, CurrentPlacedCount) :-
+    is_list(CellDomain),
+    length(CellDomain, DomainSize), DomainSize > 1,
+    (ForcedValue =:= 0 ; ForcedValue =:= ExpectedValue),
+    member(ExpectedValue, CellDomain),
+    can_place_value(Matrix, Row, Col, ExpectedValue, CycleLength),
+    set_cell(Matrix, Row, Col, ExpectedValue, UpdatedMatrix),
+    NewPlacedCount is CurrentPlacedCount + 1.
+
+% Eset 6: Többelemű domain - nulla elhelyezése
+try_place_bt(CellDomain, ForcedValue, _ExpectedValue, Row, Col, Matrix,
+             _CycleLength, ZerosPerLine, UpdatedMatrix, CurrentPlacedCount, CurrentPlacedCount) :-
+    is_list(CellDomain),
+    length(CellDomain, DomainSize), DomainSize > 1,
+    ForcedValue =:= 0,
+    member(0, CellDomain),
+    can_place_zero(Matrix, Row, Col, ZerosPerLine),
+    set_cell(Matrix, Row, Col, 0, UpdatedMatrix).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% ÉRTÉK ELHELYEZHETŐSÉG ELLENŐRZÉSE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% can_place_value(+Matrix, +Row, +Col, +Value, +CycleLength)
+%
+% Ellenőrzi, hogy a pozitív érték elhelyezhető-e az adott pozícióban.
+% Nem lehet duplikált érték a sorban/oszlopban, és nem lépheti túl a ciklushosszt.
+%
+can_place_value(Matrix, Row, Col, Value, CycleLength) :-
+    nth1(Row, Matrix, RowValues),
+    \+ value_in_line(RowValues, Value),
+    get_column_values(Matrix, Col, ColValues),
+    \+ value_in_line(ColValues, Value),
+    count_positive_in_line(RowValues, RowPositiveCount),
+    RowPositiveCount < CycleLength,
+    count_positive_in_line(ColValues, ColPositiveCount),
+    ColPositiveCount < CycleLength.
+
+% Ellenőrzi, hogy egy érték már szerepel-e a sorban/oszlopban.
 value_in_line([], _) :- !, fail.
-value_in_line([Cell|_], Val) :- integer(Cell), Cell =:= Val, !.
-value_in_line([[V]|_], Val) :- V =:= Val, !.
-value_in_line([_|Rest], Val) :- value_in_line(Rest, Val).
+value_in_line([Cell|_], Value) :- integer(Cell), Cell =:= Value, !.
+value_in_line([[SingleValue]|_], Value) :- SingleValue =:= Value, !.
+value_in_line([_|RestCells], Value) :- value_in_line(RestCells, Value).
 
+% Megszámolja a pozitív értékeket egy sorban/oszlopban.
 count_positive_in_line(Line, Count) :-
     count_positive_in_line_(Line, 0, Count).
-count_positive_in_line_([], Acc, Acc).
-count_positive_in_line_([Cell|Rest], Acc, Count) :-
-    (   (integer(Cell), Cell > 0 ; Cell = [V], V > 0)
-    ->  Acc1 is Acc + 1
-    ;   Acc1 = Acc
+
+count_positive_in_line_([], Accumulator, Accumulator).
+count_positive_in_line_([Cell|RestCells], Accumulator, Count) :-
+    (   (integer(Cell), Cell > 0 ; Cell = [SingleValue], SingleValue > 0)
+    ->  NextAccumulator is Accumulator + 1
+    ;   NextAccumulator = Accumulator
     ),
-    count_positive_in_line_(Rest, Acc1, Count).
+    count_positive_in_line_(RestCells, NextAccumulator, Count).
 
 
-% Check if we can place a zero in this row/column
-can_place_zero(Matrix, R, C, ZeroQuota) :-
-    nth1(R, Matrix, Row),
-    count_zeros_in_line(Row, RowZeros),
-    RowZeros < ZeroQuota,
-    get_column_values(Matrix, C, Col),
-    count_zeros_in_line(Col, ColZeros),
-    ColZeros < ZeroQuota.
+%% can_place_zero(+Matrix, +Row, +Col, +ZerosPerLine)
+%
+% Ellenőrzi, hogy nulla elhelyezhető-e az adott pozícióban.
+% A sorban/oszlopban nem lehet több nulla, mint a megengedett kvóta.
+%
+can_place_zero(Matrix, Row, Col, ZerosPerLine) :-
+    nth1(Row, Matrix, RowValues),
+    count_zeros_in_line(RowValues, RowZeroCount),
+    RowZeroCount < ZerosPerLine,
+    get_column_values(Matrix, Col, ColValues),
+    count_zeros_in_line(ColValues, ColZeroCount),
+    ColZeroCount < ZerosPerLine.
 
+% Megszámolja a nullákat egy sorban/oszlopban.
 count_zeros_in_line(Line, Count) :-
     count_zeros_in_line_(Line, 0, Count).
-count_zeros_in_line_([], Acc, Acc).
-count_zeros_in_line_([Cell|Rest], Acc, Count) :-
+
+count_zeros_in_line_([], Accumulator, Accumulator).
+count_zeros_in_line_([Cell|RestCells], Accumulator, Count) :-
     (   (integer(Cell), Cell =:= 0 ; Cell = [0])
-    ->  Acc1 is Acc + 1
-    ;   Acc1 = Acc
+    ->  NextAccumulator is Accumulator + 1
+    ;   NextAccumulator = Accumulator
     ),
-    count_zeros_in_line_(Rest, Acc1, Count).
+    count_zeros_in_line_(RestCells, NextAccumulator, Count).
 
 
-% Check final solution has correct row/column counts
-check_row_col_counts(Matrix, N, Cycle) :-
-    forall(between(1, N, R), (nth1(R, Matrix, Row), count_positive_in_line(Row, Cycle))),
-    forall(between(1, N, C), (get_column_values(Matrix, C, Col), count_positive_in_line(Col, Cycle))).
+%% check_row_col_counts(+Matrix, +BoardSize, +CycleLength)
+%
+% Ellenőrzi, hogy a végső megoldásban minden sorban és oszlopban
+% pontosan CycleLength pozitív szám szerepel.
+%
+check_row_col_counts(Matrix, BoardSize, CycleLength) :-
+    forall(between(1, BoardSize, RowIndex), 
+           (nth1(RowIndex, Matrix, Row), count_positive_in_line(Row, CycleLength))),
+    forall(between(1, BoardSize, ColIndex), 
+           (get_column_values(Matrix, ColIndex, Col), count_positive_in_line(Col, CycleLength))).
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% SZŰKÍTÉSEK PROPAGÁLÁSA
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% propagate_all(+PuzzleDescriptor, +SpiralPositions, +MatrixIn, -MatrixOut)
+%
 % Szűkítések ismételt alkalmazása fixpontig.
-% propagate_all(+FL,+SpiralPos,+MatrixIn,-MatrixOut)
-propagate_all(_FL, _, [], []) :- !.
-propagate_all(FL, SpiralPos, MatrixIn, MatrixOut) :-
-    (   apply_one_restriction(FL, SpiralPos, MatrixIn, Temp)
-    ->  (   Temp == []
+% Addig alkalmazza a különböző szűkítési szabályokat, amíg már nem változik a mátrix.
+%
+propagate_all(_PuzzleDescriptor, _, [], []) :- !.
+propagate_all(PuzzleDescriptor, SpiralPositions, MatrixIn, MatrixOut) :-
+    (   apply_one_restriction(PuzzleDescriptor, SpiralPositions, MatrixIn, TempMatrix)
+    ->  (   TempMatrix == []
         ->  MatrixOut = []
-        ;   propagate_all(FL, SpiralPos, Temp, MatrixOut)
+        ;   propagate_all(PuzzleDescriptor, SpiralPositions, TempMatrix, MatrixOut)
         )
     ;   MatrixOut = MatrixIn
     ).
 
 
-% Egyetlen (ismert/kizárásos/spirál) szűkítés kipróbálása.
-% apply_one_restriction(+FL,+SpiralPos,+MatrixIn,-MatrixOut)
-apply_one_restriction(FL, SpiralPos, MatrixIn, MatrixOut) :-
-    (   ismert_szukites(FL, MatrixIn, MatrixOut)
+%% apply_one_restriction(+PuzzleDescriptor, +SpiralPositions, +MatrixIn, -MatrixOut)
+%
+% Egyetlen szűkítési lépés végrehajtása. Sorrendben próbálja:
+% 1. Ismert értékek propagálása (ismert_szukites)
+% 2. Kizárásos szűkítés (kizarasos_szukites)
+% 3. Spirál-specifikus szűkítés (mxtekercs_szukites)
+%
+apply_one_restriction(PuzzleDescriptor, SpiralPositions, MatrixIn, MatrixOut) :-
+    (   ismert_szukites(PuzzleDescriptor, MatrixIn, MatrixOut)
     ->  true
-    ;   kizarasos_szukites(FL, MatrixIn, Temp, _Info),
-        (   Temp == []
+    ;   kizarasos_szukites(PuzzleDescriptor, MatrixIn, TempMatrix, _RestrictionInfo),
+        (   TempMatrix == []
         ->  MatrixOut = []
-        ;   Temp \== MatrixIn,
-            MatrixOut = Temp
+        ;   TempMatrix \== MatrixIn,
+            MatrixOut = TempMatrix
         )
-    ;   mxtekercs_szukites(FL, SpiralPos, MatrixIn, MatrixOut),
+    ;   mxtekercs_szukites(PuzzleDescriptor, SpiralPositions, MatrixIn, MatrixOut),
         MatrixOut \== MatrixIn
     ).
 
 
+%% mxtekercs_szukites(+PuzzleDescriptor, +SpiralPositions, +MatrixIn, -MatrixOut)
+%
 % Spirál-specifikus szűkítés a mátrixon.
-% mxtekercs_szukites(+FL,+Positions,+MatrixIn,-MatrixOut)
-mxtekercs_szukites(FL, Positions, MatrixIn, MatrixOut) :-
+% Kiveszi a spirál mentén a cellaértékeket, szűkíti őket, majd visszaírja.
+%
+mxtekercs_szukites(PuzzleDescriptor, SpiralPositions, MatrixIn, MatrixOut) :-
     MatrixIn \== [],
-    extract_spiral(MatrixIn, Positions, Spiral),
-    (   apply_spiral_passes(FL, Spiral, Narrowed)
-    ->  (   Narrowed == Spiral
+    extract_spiral(MatrixIn, SpiralPositions, SpiralValues),
+    (   apply_spiral_passes(PuzzleDescriptor, SpiralValues, NarrowedSpiral)
+    ->  (   NarrowedSpiral == SpiralValues
         ->  fail
-        ;   replace_spiral_values(MatrixIn, Positions, Narrowed, MatrixOut)
+        ;   replace_spiral_values(MatrixIn, SpiralPositions, NarrowedSpiral, MatrixOut)
         )
     ;   MatrixOut = []
     ).
 
 
+%% apply_spiral_passes(+PuzzleDescriptor, +SpiralIn, -SpiralOut)
+%
 % Spirál előre-hátra szűkítése fixpontig.
-% apply_spiral_passes(+FL,+SpiralIn,-SpiralOut)
-apply_spiral_passes(FL, SpiralIn, SpiralOut) :-
-    spiral_fixpoint(FL, SpiralIn, SpiralOut).
+%
+apply_spiral_passes(PuzzleDescriptor, SpiralIn, SpiralOut) :-
+    spiral_fixpoint(PuzzleDescriptor, SpiralIn, SpiralOut).
 
 
-% Előre + vissza spirál szűkítés és domain metszet ismétlés.
-spiral_fixpoint(FL, SpiralIn, SpiralOut) :-
-    spiral_fixpoint_iter(FL, SpiralIn, 0, SpiralOut).
+%% spiral_fixpoint(+PuzzleDescriptor, +SpiralIn, -SpiralOut)
+%
+% Előre és visszafelé szűkítés ismétlése, amíg a spirál nem változik.
+% Maximum 20 iterációig fut a végtelen ciklusok elkerülésére.
+%
+spiral_fixpoint(PuzzleDescriptor, SpiralIn, SpiralOut) :-
+    spiral_fixpoint_iter(PuzzleDescriptor, SpiralIn, 0, SpiralOut).
 
-spiral_fixpoint_iter(_FL, SpiralIn, MaxIter, SpiralIn) :-
-    MaxIter >= 20, !.
-spiral_fixpoint_iter(FL, SpiralIn, Iter, SpiralOut) :-
-    tekercs_szukites(FL, SpiralIn, SpiralForward),
-    reverse(SpiralForward, RevIn),
-    tekercs_szukites_backward(FL, RevIn, RevNarrowed),
-    reverse(RevNarrowed, Combined),
-    (   Combined == SpiralIn
-    ->  SpiralOut = Combined
-    ;   NextIter is Iter + 1,
-        spiral_fixpoint_iter(FL, Combined, NextIter, SpiralOut)
+spiral_fixpoint_iter(_PuzzleDescriptor, SpiralIn, IterationCount, SpiralIn) :-
+    IterationCount >= 20, !.
+spiral_fixpoint_iter(PuzzleDescriptor, SpiralIn, IterationCount, SpiralOut) :-
+    tekercs_szukites(PuzzleDescriptor, SpiralIn, SpiralForward),
+    reverse(SpiralForward, ReversedInput),
+    tekercs_szukites_backward(PuzzleDescriptor, ReversedInput, ReversedNarrowed),
+    reverse(ReversedNarrowed, CombinedResult),
+    (   CombinedResult == SpiralIn
+    ->  SpiralOut = CombinedResult
+    ;   NextIteration is IterationCount + 1,
+        spiral_fixpoint_iter(PuzzleDescriptor, CombinedResult, NextIteration, SpiralOut)
     ).
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% DOMAIN METSZÉS ÉS KEZELÉS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Spirál elemek domainjeinek páronkénti metszése.
 intersect_spiral_domains([], [], []).
-intersect_spiral_domains([A|As], [B|Bs], [R|Rs]) :-
-    intersect_domains(A, B, R),
-    intersect_spiral_domains(As, Bs, Rs).
+intersect_spiral_domains([DomainA|RestA], [DomainB|RestB], [ResultDomain|RestResult]) :-
+    intersect_domains(DomainA, DomainB, ResultDomain),
+    intersect_spiral_domains(RestA, RestB, RestResult).
 
 
-% Két teljesen konkretizált (szám) domain összevetése.
-intersect_domains(A, B, R) :-
-    integer(A),
-    integer(B),
-    !,
-    ( A =:= B -> R = A ; fail ).
+%% intersect_domains(+DomainA, +DomainB, -ResultDomain)
+%
+% Két domain (egész szám vagy lista) metszete.
+% Ha a metszet üres, sikertelen lesz.
+%
+
+% Két egész szám metszete: egyezniük kell.
+intersect_domains(IntValueA, IntValueB, Result) :-
+    integer(IntValueA),
+    integer(IntValueB), !,
+    (IntValueA =:= IntValueB -> Result = IntValueA ; fail).
+
+% Egész szám vs lista: az egész szerepel-e a listában.
+intersect_domains(IntValue, ListDomain, Result) :-
+    integer(IntValue),
+    is_list(ListDomain), !,
+    (ord_memberchk(IntValue, ListDomain) -> Result = IntValue ; fail).
+
+% Lista vs egész szám: az egész szerepel-e a listában.
+intersect_domains(ListDomain, IntValue, Result) :-
+    is_list(ListDomain),
+    integer(IntValue), !,
+    (ord_memberchk(IntValue, ListDomain) -> Result = IntValue ; fail).
+
+% Két lista metszete: nem lehet üres.
+intersect_domains(ListA, ListB, Result) :-
+    is_list(ListA),
+    is_list(ListB),
+    ord_intersection(ListA, ListB, Intersection),
+    Intersection \= [],
+    Result = Intersection.
 
 
-% Szám vs lista domain metszése (szám benne van-e listában).
-intersect_domains(A, B, R) :-
-    integer(A),
-    is_list(B),
-    !,
-    ( ord_memberchk(A, B) -> R = A ; fail ).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% SPIRÁL VISSZAFELÉ SZŰKÍTÉS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-% Lista vs szám domain metszése (szám benne van-e listában).
-intersect_domains(A, B, R) :-
-    is_list(A),
-    integer(B),
-    !,
-    ( ord_memberchk(B, A) -> R = B ; fail ).
-
-
-% Két lista domain metszése; üres metszet esetén bukás.
-intersect_domains(A, B, R) :-
-    is_list(A),
-    is_list(B),
-    ord_intersection(A, B, Intersect),
-    Intersect \= [],
-    R = Intersect.
-
-
-% Backward spiral narrowing
+%% tekercs_szukites_backward(+PuzzleDescriptor, +SpiralLine, -NarrowedSpiral)
+%
 % Spirál visszafelé szűkítése (hátrafelé propagálás).
+% A spirál végéről indulva szűkíti az egyes pozíciókat az előző pozíciók alapján.
+%
 tekercs_szukites_backward(szt(_, CycleLength, _), SpiralLine, NarrowedSpiral) :-
     SpiralLine \= [],
-    process_spiral_backward(SpiralLine, CycleLength, [1], NarrowedSpiral),
-    !.
-
+    process_spiral_backward(SpiralLine, CycleLength, [1], NarrowedSpiral), !.
 
 % Visszafelé spirál feldolgozás vége (alapeset).
 process_spiral_backward([], _, _, []).
-
-process_spiral_backward([PositionDomain|Rest], CycleLength,
-                        NextPositiveSetIn,
-                        [NarrowedDomain|RestNarrowed]) :-
-    shrink_position_backward(PositionDomain, CycleLength,
-                             NextPositiveSetIn,
-                             NarrowedDomain,
-                             NextPositiveSetOut),
-    process_spiral_backward(Rest, CycleLength,
-                            NextPositiveSetOut,
-                            RestNarrowed).
+process_spiral_backward([PositionDomain|RestPositions], CycleLength,
+                        NextPositiveSetIn, [NarrowedDomain|RestNarrowed]) :-
+    shrink_position_backward(PositionDomain, CycleLength, NextPositiveSetIn,
+                             NarrowedDomain, NextPositiveSetOut),
+    process_spiral_backward(RestPositions, CycleLength, NextPositiveSetOut, RestNarrowed).
 
 
-% Egy spirálpozíció domainjének leszűkítése visszafelé.
-shrink_position_backward(PositionDomain, CycleLength,
-                         NextPositiveSetIn,
-                         NarrowedDomain,
-                         NextPositiveSetOut) :-
-    cyclic_predecessors(CycleLength, NextPositiveSetIn, PredSet),
-    ord_add_element(PredSet, 0, AllowedValues),
-    intersect_domain(PositionDomain, AllowedValues,
-                     NarrowedDomain, ResultSet),
-    update_next_positive_set(ResultSet, NextPositiveSetIn,
-                             NextPositiveSetOut).
+%% shrink_position_backward(+PositionDomain, +CycleLength, +NextPositiveSetIn,
+%%                          -NarrowedDomain, -NextPositiveSetOut)
+%
+% Egy spirálpozíció domainjének szűkítése visszafelé haladva.
+% A ciklikus előd értékek alapján szűkít.
+%
+shrink_position_backward(PositionDomain, CycleLength, NextPositiveSetIn,
+                         NarrowedDomain, NextPositiveSetOut) :-
+    cyclic_predecessors(CycleLength, NextPositiveSetIn, PredecessorSet),
+    ord_add_element(PredecessorSet, 0, AllowedValues),
+    intersect_domain(PositionDomain, AllowedValues, NarrowedDomain, ResultSet),
+    update_next_positive_set(ResultSet, NextPositiveSetIn, NextPositiveSetOut).
 
 
-% Következő értékek ciklikus elődhalmazának meghatározása.
-cyclic_predecessors(CycleLength, NextSet, PredSet) :-
-    findall(Pred, (member(Value, NextSet), cyclic_predecessor(CycleLength, Value, Pred)), PredList),
-    list_to_ord_set(PredList, PredSet).
+%% cyclic_predecessors(+CycleLength, +ValueSet, -PredecessorSet)
+%
+% Kiszámítja egy értékhalmaz ciklikus elődeinek halmazát.
+%
+cyclic_predecessors(CycleLength, ValueSet, PredecessorSet) :-
+    findall(Predecessor, 
+            (member(Value, ValueSet), cyclic_predecessor(CycleLength, Value, Predecessor)), 
+            PredecessorList),
+    list_to_ord_set(PredecessorList, PredecessorSet).
 
 % 0 speciális eset: önmaga elődje.
 cyclic_predecessor(_, 0, 0) :- !.
-
-cyclic_predecessor(CycleLength, Value, Pred) :-
-    (   Value > 1
-    ->  Pred is Value - 1
-    ;   Pred is CycleLength
-    ).
+cyclic_predecessor(CycleLength, Value, Predecessor) :-
+    (Value > 1 -> Predecessor is Value - 1 ; Predecessor is CycleLength).
 
 
-% Frissíti a következő pozitív készletet a szűkítés eredménye alapján.
-update_next_positive_set(ResultSet, NextPositiveSetIn, NextPositiveSetOut) :-
+%% update_next_positive_set(+ResultSet, +PreviousSet, -UpdatedSet)
+%
+% Frissíti a következő pozitív értékek halmazát a szűkítés eredménye alapján.
+%
+update_next_positive_set(ResultSet, PreviousSet, UpdatedSet) :-
     (   \+ ord_memberchk(0, ResultSet)
-    ->  NextPositiveSetOut = ResultSet
-    ;   remove_zero(ResultSet, PositiveOnly),
-        ord_union(PositiveOnly, NextPositiveSetIn, NextPositiveSetOut)
+    ->  UpdatedSet = ResultSet
+    ;   remove_zero(ResultSet, PositiveOnlySet),
+        ord_union(PositiveOnlySet, PreviousSet, UpdatedSet)
     ).
 
 
-% Spirál pozíciókhoz tartozó cellaértékek kinyerése a mátrixból.
-% extract_spiral(+Matrix,+Positions,-SpiralList)
-extract_spiral(Matrix, Positions, Spiral) :-
-    maplist(cell_at(Matrix), Positions, Spiral).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% SPIRÁL ÉRTÉKEK KINYERÉSE ÉS VISSZAÍRÁSA
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%% extract_spiral(+Matrix, +SpiralPositions, -SpiralValues)
+%
+% Spirál pozíciókhoz tartozó cellaértékek kinyerése a mátrixból.
+%
+extract_spiral(Matrix, SpiralPositions, SpiralValues) :-
+    maplist(cell_at(Matrix), SpiralPositions, SpiralValues).
 
 % Egyetlen pozíció cellájának lekérése.
-cell_at(Matrix, pos(R,C), Cell) :-
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell).
+cell_at(Matrix, pos(Row, Col), CellValue) :-
+    nth1(Row, Matrix, RowValues),
+    nth1(Col, RowValues, CellValue).
 
 
+%% replace_spiral_values(+MatrixIn, +SpiralPositions, +NewValues, -MatrixOut)
+%
 % Spirál mentén új értékek visszaírása a mátrixba.
-% replace_spiral_values(+MatrixIn,+Positions,+Values,-MatrixOut)
-replace_spiral_values(MatrixIn, Positions, Values, MatrixOut) :-
-    replace_spiral_values_(Positions, Values, MatrixIn, MatrixOut).
+%
+replace_spiral_values(MatrixIn, SpiralPositions, NewValues, MatrixOut) :-
+    replace_spiral_values_(SpiralPositions, NewValues, MatrixIn, MatrixOut).
 
-% Belső rekurzív segéd a spirál értékek cseréjéhez.
 replace_spiral_values_([], [], Matrix, Matrix).
-replace_spiral_values_([pos(R,C)|RestPos], [Value|RestVals], MatrixIn, MatrixOut) :-
-    set_cell(MatrixIn, R, C, Value, MatrixNext),
-    replace_spiral_values_(RestPos, RestVals, MatrixNext, MatrixOut).
+replace_spiral_values_([pos(Row, Col)|RestPositions], [Value|RestValues], MatrixIn, MatrixOut) :-
+    set_cell(MatrixIn, Row, Col, Value, TempMatrix),
+    replace_spiral_values_(RestPositions, RestValues, TempMatrix, MatrixOut).
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% MÁTRIX ÁLLAPOT ELLENŐRZÉS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% solved_matrix(+Matrix)
+%
 % Igaz, ha a mátrix minden cellája végleges értékre szűkült.
-% solved_matrix(+Matrix)
+%
 solved_matrix(Matrix) :-
-    maplist(row_finalized, Matrix).
-
+    maplist(is_row_finalized, Matrix).
 
 % Igaz, ha a sor minden cellája végleges.
-row_finalized(Row) :-
-    maplist(cell_finalized, Row).
-
+is_row_finalized(Row) :-
+    maplist(is_cell_finalized, Row).
 
 % Végleges cella: konkrét szám vagy egyelemű lista.
-cell_finalized(Cell) :- integer(Cell), !.
-cell_finalized([_]).
+is_cell_finalized(Cell) :- integer(Cell), !.
+is_cell_finalized([_]).
 
 
-% Egyszerűsített heurisztikus választás a cella domainjéből
-% Először pozitív értékeket próbál, utána 0-t
-domain_choice_simple(Domain, _Cycle, Value) :-
-    include(pos_value, Domain, Positives),
-    Positives \= [],
-    member(Value, Positives).
-domain_choice_simple(Domain, _Cycle, 0) :-
-    member(0, Domain).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% MEGOLDÁS KONVERTÁLÁS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-% Pozitív jelölt (0 kizárva).
-pos_value(V) :- V > 0.
-
-
-select_branch_cell_heuristic(Matrix, SpiralPos, R, C, Domain) :-
-    select_min_domain_cell_fast(Matrix, SpiralPos, R, C, Domain).
-
-
-select_min_domain_cell_fast(Matrix, Positions, R, C, Domain) :-
-    select_min_domain_cell_fast_(Matrix, Positions, 100, 0, 0, [], R, C, Domain).
-
-select_min_domain_cell_fast_(_, [], BestLen, BestR, BestC, BestDomain, BestR, BestC, BestDomain) :-
-    BestLen < 100.
-
-select_min_domain_cell_fast_(Matrix, [pos(R0,C0)|Rest], CurBestLen, CurBestR, CurBestC, CurBestDomain,
-                       R, C, Domain) :-
-    nth1(R0, Matrix, Row),
-    nth1(C0, Row, Cell),
-    (   is_list(Cell),
-        length(Cell, Len),
-        Len > 1
-    ->  (   Len < CurBestLen
-        ->  (   Len =:= 2
-            ->  R = R0, C = C0, Domain = Cell
-            ;   select_min_domain_cell_fast_(Matrix, Rest, Len, R0, C0, Cell, R, C, Domain)
-            )
-        ;   select_min_domain_cell_fast_(Matrix, Rest, CurBestLen, CurBestR, CurBestC, CurBestDomain, R, C, Domain)
-        )
-    ;   select_min_domain_cell_fast_(Matrix, Rest, CurBestLen, CurBestR, CurBestC, CurBestDomain, R, C, Domain)
-    ).
-
-
-% Első többértékű domainű cella kiválasztása spirál sorrendben.
-% select_branch_cell(+Matrix,-R,-C,-Domain)
-select_branch_cell(Matrix, R, C, Domain) :-
-    length(Matrix, N),
-    spiral_positions(N, Positions),
-    select_spiral_cell(Matrix, Positions, R, C, Domain).
-
-
-% Spirál listában első nem egyelemű cella kiválasztása.
-select_spiral_cell(Matrix, [pos(R,C)|_], R, C, Domain) :-
-    nth1(R, Matrix, Row),
-    nth1(C, Row, Cell),
-    is_list(Cell),
-    length(Cell, Len),
-    Len > 1,
-    Domain = Cell,
-    !.
-
-select_spiral_cell(Matrix, [_|Rest], R, C, Domain) :-
-    select_spiral_cell(Matrix, Rest, R, C, Domain).
-
-
+%% matrix_to_solution(+Matrix, -Solution)
+%
 % Megoldott mátrix sorait egyszerű értéklistákká alakítja.
-% matrix_to_solution(+Matrix,-Solution)
+% Az egyelemű listákat kibontja, a számokat megtartja.
+%
 matrix_to_solution(Matrix, Solution) :-
-    maplist(row_to_values, Matrix, Solution).
-
+    maplist(convert_row_to_values, Matrix, Solution).
 
 % Sor celláinak konkretizálása.
-row_to_values(Row, Values) :-
-    maplist(cell_value, Row, Values).
-
+convert_row_to_values(Row, Values) :-
+    maplist(extract_cell_value, Row, Values).
 
 % Cellából numerikus érték kinyerése.
-cell_value(Cell, Value) :-
-    (   integer(Cell)
-    ->  Value = Cell
-    ;   Cell = [Value]
+extract_cell_value(Cell, Value) :-
+    (integer(Cell) -> Value = Cell ; Cell = [Value]).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% SPIRÁL POZÍCIÓK GENERÁLÁSA
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% spiral_positions(+BoardSize, -SpiralPositions)
+%
+% N méretű négyzet táblához spirál sorrendű pozíciók listáját állítja elő.
+% A spirál a bal felső sarokból indul és befelé tekeredik az óramutató járásával.
+%
+spiral_positions(BoardSize, SpiralPositions) :-
+    spiral_collect(1, BoardSize, 1, BoardSize, SpiralPositions).
+
+% Megállási feltétel: ha a határok átfednek, üres lista.
+spiral_collect(TopRow, BottomRow, LeftCol, RightCol, []) :-
+    (TopRow > BottomRow ; LeftCol > RightCol), !.
+
+% Egy spirálréteg bejárása és rekurzió a belső rétegre.
+spiral_collect(TopRow, BottomRow, LeftCol, RightCol, Positions) :-
+    TopRow =< BottomRow,
+    LeftCol =< RightCol,
+    % Felső él: balról jobbra
+    collect_top_edge(TopRow, LeftCol, RightCol, TopEdgePositions),
+    NextTopRow is TopRow + 1,
+    % Jobb él: felülről lefelé
+    collect_right_edge(NextTopRow, BottomRow, RightCol, RightEdgePositions),
+    % Alsó él: jobbról balra (ha van)
+    (   TopRow < BottomRow
+    ->  PrevRightCol is RightCol - 1,
+        collect_bottom_edge(BottomRow, PrevRightCol, LeftCol, BottomEdgePositions)
+    ;   BottomEdgePositions = []
+    ),
+    % Bal él: lentről felfelé (ha van)
+    (   LeftCol < RightCol
+    ->  PrevBottomRow is BottomRow - 1,
+        NextTopRowForLeft is TopRow + 1,
+        collect_left_edge(PrevBottomRow, NextTopRowForLeft, LeftCol, LeftEdgePositions)
+    ;   LeftEdgePositions = []
+    ),
+    % Belső réteg rekurzív bejárása
+    InnerTopRow is TopRow + 1,
+    InnerBottomRow is BottomRow - 1,
+    InnerLeftCol is LeftCol + 1,
+    InnerRightCol is RightCol - 1,
+    spiral_collect(InnerTopRow, InnerBottomRow, InnerLeftCol, InnerRightCol, InnerPositions),
+    append([TopEdgePositions, RightEdgePositions, BottomEdgePositions, LeftEdgePositions, InnerPositions], Positions).
+
+% Felső él pozícióinak gyűjtése balról jobbra.
+collect_top_edge(_Row, LeftCol, RightCol, []) :- LeftCol > RightCol, !.
+collect_top_edge(Row, LeftCol, RightCol, [pos(Row, LeftCol)|RestPositions]) :-
+    LeftCol =< RightCol,
+    NextCol is LeftCol + 1,
+    collect_top_edge(Row, NextCol, RightCol, RestPositions).
+
+% Jobb él pozícióinak gyűjtése felülről lefelé.
+collect_right_edge(TopRow, BottomRow, _Col, []) :- TopRow > BottomRow, !.
+collect_right_edge(TopRow, BottomRow, Col, [pos(TopRow, Col)|RestPositions]) :-
+    TopRow =< BottomRow,
+    NextRow is TopRow + 1,
+    collect_right_edge(NextRow, BottomRow, Col, RestPositions).
+
+% Alsó él pozícióinak gyűjtése jobbról balra.
+collect_bottom_edge(_Row, StartCol, EndCol, []) :- StartCol < EndCol, !.
+collect_bottom_edge(Row, StartCol, EndCol, [pos(Row, StartCol)|RestPositions]) :-
+    StartCol >= EndCol,
+    NextCol is StartCol - 1,
+    collect_bottom_edge(Row, NextCol, EndCol, RestPositions).
+
+% Bal él pozícióinak gyűjtése lentről felfelé.
+collect_left_edge(StartRow, EndRow, _Col, []) :- StartRow < EndRow, !.
+collect_left_edge(StartRow, EndRow, Col, [pos(StartRow, Col)|RestPositions]) :-
+    StartRow >= EndRow,
+    NextRow is StartRow - 1,
+    collect_left_edge(NextRow, EndRow, Col, RestPositions).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% KEZDŐ TÁBLA ÉS ISMERT SZŰKÍTÉS (KHF5 alapján)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% kezdotabla(+PuzzleDescriptor, -Matrix)
+%
+% Létrehozza a kezdő mátrixot a feladvány alapján.
+% PuzzleDescriptor = szt(BoardSize, CycleLength, GivenElements)
+% A mátrix minden cellája egy domain listát tartalmaz:
+%   - ha adott: [GivenValue]
+%   - különben: [0..CycleLength] ha BoardSize > CycleLength; vagy [1..CycleLength] ha egyenlőek
+%
+kezdotabla(szt(BoardSize, CycleLength, GivenElements), Matrix) :-
+    compute_base_domain(BoardSize, CycleLength, BaseDomain),
+    create_empty_matrix(BoardSize, BoardSize, BaseDomain, EmptyMatrix),
+    apply_given_elements(GivenElements, EmptyMatrix, Matrix).
+
+
+%% ismert_szukites(+PuzzleDescriptor, +MatrixIn, -MatrixOut)
+%
+% Ismert (egyelemű lista) értékekből induló sor/oszlop-alapú szűkítések
+% ismétlése mindaddig, amíg létezik egyelemű lista. Ha nem történik
+% szűkítés, az eljárás meghiúsul. Ha ellentmondás adódik, MatrixOut = [].
+%
+ismert_szukites(szt(BoardSize, CycleLength, _), MatrixIn, MatrixOut) :-
+    compute_zero_quota(BoardSize, CycleLength, ZeroQuota),
+    propagate_until_fixpoint(MatrixIn, BoardSize, CycleLength, ZeroQuota, ResultMatrix, DidChange),
+    (   ResultMatrix == []
+    ->  MatrixOut = []
+    ;   DidChange == true
+    ->  MatrixOut = ResultMatrix
+    ;   fail  % nem volt egyelemű tartomány, vagy nem történt szűkítés
     ).
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Spirál pozíciók kezelése
-
-% N méretű négyzet táblához spirál sorrendű pozíciók.
-spiral_positions(N, Positions) :-
-    spiral_collect(1, N, 1, N, Positions).
-
-
-% Spirál gyűjtés határátlépéskor leáll.
-spiral_collect(Top, Bottom, Left, Right, []) :-
-    (Top > Bottom ; Left > Right), !.
-
-% Egy réteg szélei, majd rekurzió belső rétegre.
-spiral_collect(Top, Bottom, Left, Right, Positions) :-
-    Top =< Bottom,
-    Left =< Right,
-    top_edge_positions(Top, Left, Right, TopCells),
-    Top1 is Top + 1,
-    right_edge_positions(Top1, Bottom, Right, RightCells),
-    (   Top < Bottom
-    ->  StartB is Right - 1,
-        bottom_edge_positions(Bottom, StartB, Left, BottomCells)
-    ;   BottomCells = []
-    ),
-    (   Left < Right
-    ->  StartL is Bottom - 1,
-        EndL is Top + 1,
-        left_edge_positions(StartL, EndL, Left, LeftCells)
-    ;   LeftCells = []
-    ),
-    NextTop is Top + 1,
-    NextBottom is Bottom - 1,
-    NextLeft is Left + 1,
-    NextRight is Right - 1,
-    spiral_collect(NextTop, NextBottom, NextLeft, NextRight, InnerCells),
-    append([TopCells, RightCells, BottomCells, LeftCells, InnerCells], Positions).
-
-
-% Felső él bejárása balról jobbra.
-top_edge_positions(_Row, Left, Right, []) :-
-    Left > Right, !.
-
-top_edge_positions(Row, Left, Right, [pos(Row, Left)|Rest]) :-
-    Left =< Right,
-    Next is Left + 1,
-    top_edge_positions(Row, Next, Right, Rest).
-
-
-% Jobb él bejárása felülről lefelé.
-right_edge_positions(Top, Bottom, _Col, []) :-
-    Top > Bottom, !.
-
-right_edge_positions(Top, Bottom, Col, [pos(Top, Col)|Rest]) :-
-    Top =< Bottom,
-    Next is Top + 1,
-    right_edge_positions(Next, Bottom, Col, Rest).
-
-
-% Alsó él bejárása jobbról balra.
-bottom_edge_positions(_Row, Start, End, []) :-
-    Start < End, !.
-
-bottom_edge_positions(Row, Start, End, [pos(Row, Start)|Rest]) :-
-    Start >= End,
-    Next is Start - 1,
-    bottom_edge_positions(Row, Next, End, Rest).
-
-
-% Bal él bejárása lentről felfelé.
-left_edge_positions(Start, End, _Col, []) :-
-    Start < End, !.
-    
-left_edge_positions(Start, End, Col, [pos(Start, Col)|Rest]) :-
-    Start >= End,
-    Next is Start - 1,
-    left_edge_positions(Next, End, Col, Rest).
-% ---- Beépített Khf5 kód ----
-% ------------------------------------------------------------
-% Khf5 – Számtekercs: kezdő tábla és ismert szűkítés
+%% compute_base_domain(+BoardSize, +CycleLength, -BaseDomain)
 %
-% @author "Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]"
-% @date   "2025-11-13" 
-% ------------------------------------------------------------
+% Kiszámítja az alapértelmezett domain-t.
+% Ha BoardSize > CycleLength: [0, 1, ..., CycleLength]
+% Ha BoardSize = CycleLength: [1, ..., CycleLength]
+%
+compute_base_domain(BoardSize, CycleLength, BaseDomain) :-
+    (   BoardSize > CycleLength
+    ->  generate_range_list(0, CycleLength, BaseDomain)
+    ;   BoardSize =:= CycleLength
+    ->  generate_range_list(1, CycleLength, BaseDomain)
+    ).
+
+% Tartomány lista generálása [Low..High].
+generate_range_list(Low, High, RangeList) :-
+    Low =< High,
+    generate_range_list_helper(Low, High, RangeList).
+
+generate_range_list_helper(Current, High, [Current|Rest]) :-
+    Current < High, !,
+    Next is Current + 1,
+    generate_range_list_helper(Next, High, Rest).
+generate_range_list_helper(High, High, [High]).
 
 
+%% create_empty_matrix(+RowCount, +ColCount, +DefaultValue, -Matrix)
+%
+% Létrehoz egy RowCount x ColCount méretű mátrixot, minden cellában DefaultValue értékkel.
+%
+create_empty_matrix(0, _ColCount, _DefaultValue, []).
+create_empty_matrix(RowCount, ColCount, DefaultValue, [Row|RestRows]) :-
+    RowCount > 0,
+    create_matrix_row(ColCount, DefaultValue, Row),
+    NextRowCount is RowCount - 1,
+    create_empty_matrix(NextRowCount, ColCount, DefaultValue, RestRows).
 
-:- use_module(library(lists)).  % ensures availability of nth1/4 and related list predicates
-
-
-
-% kezdotabla(+FLeiro, -Mx)
-% FLeiro = szt(N, M, Givens), ahol Givens listája i(R,C,E) strukturák.
-% Az Mx mátrix N x N, minden cella domainje:
-%  - ha adott: [E]
-%  - különben: [0..M], ha N > M; vagy [1..M], ha N = M
-
-kezdotabla(szt(N, M, Givens), Mx) :-
-	base_domain(N, M, Dom),
-	make_matrix(N, N, Dom, Mx0),
-	apply_givens(Givens, Mx0, Mx).
-
-
-
-% ismert_szukites(+FLeiro, +Mx0, -Mx)
-% Ismert (egyelemű lista) értékekből induló sor/oszlop-alapú szűkítések
-% ismétlése mindaddig, amíg létezik egyelemű lista. Ha nem történik
-% szűkítés, az eljárás meghiúsul. Ha ellentmondás adódik, Mx = [].
-
-ismert_szukites(szt(N, M, _), Mx0, Mx) :-
-	zero_quota(N, M, Z),
-	propagate_until_fixpoint(Mx0, N, M, Z, Mx1, DidChange),
-	( Mx1 == [] -> Mx = []
-	; DidChange == true -> Mx = Mx1
-	; % nem volt egyelemű tartomány, vagy nem történt szűkítés
-	  fail
-	).
+create_matrix_row(0, _DefaultValue, []).
+create_matrix_row(ColCount, DefaultValue, [DefaultValue|RestCells]) :-
+    ColCount > 0,
+    NextColCount is ColCount - 1,
+    create_matrix_row(NextColCount, DefaultValue, RestCells).
 
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Segédeljárások – kezdotabla
-
-
-base_domain(N, M, Dom) :-
-	( N > M -> range_list(0, M, Dom)
-	; N =:= M -> range_list(1, M, Dom)
-	).
-
-
-range_list(Lo, Hi, L) :-
-	Lo =< Hi,
-	range_list_(Lo, Hi, L).
+%% apply_given_elements(+GivenElements, +MatrixIn, -MatrixOut)
+%
+% Beírja az adott elemeket a mátrixba egyelemű listaként.
+%
+apply_given_elements([], Matrix, Matrix).
+apply_given_elements([i(Row, Col, Value)|RestElements], MatrixIn, MatrixOut) :-
+    set_cell(MatrixIn, Row, Col, [Value], TempMatrix),
+    apply_given_elements(RestElements, TempMatrix, MatrixOut).
 
 
-range_list_(I, Hi, [I|Rest]) :-
-	I < Hi, !,
-	I1 is I + 1,
-	range_list_(I1, Hi, Rest).
-range_list_(Hi, Hi, [Hi]).
+%% compute_zero_quota(+BoardSize, +CycleLength, -ZeroQuota)
+%
+% Kiszámítja, hogy hány nulla lehet egy sorban/oszlopban.
+% ZeroQuota = BoardSize - CycleLength
+%
+compute_zero_quota(BoardSize, CycleLength, ZeroQuota) :- 
+    ZeroQuota is BoardSize - CycleLength.
 
 
-make_matrix(0, _Cols, _Elem, []).
-make_matrix(Rows, Cols, Elem, [Row|Rest]) :-
-	Rows > 0,
-	make_row(Cols, Elem, Row),
-	R1 is Rows - 1,
-	make_matrix(R1, Cols, Elem, Rest).
-
-
-make_row(0, _Elem, []).
-make_row(N, Elem, [Elem|Rest]) :-
-	N > 0,
-	N1 is N - 1,
-	make_row(N1, Elem, Rest).
-
-
-apply_givens([], Mx, Mx).
-apply_givens([i(R,C,E)|Gs], Mx0, Mx) :-
-	set_cell(Mx0, R, C, [E], Mx1),
-	apply_givens(Gs, Mx1, Mx).
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Segédeljárások – ismert_szukites
-
-
-% Z = n - m – a 0-k száma egy sorban/oszlopban
-zero_quota(N, M, Z) :- Z is N - M.
-
-
-% propagate_until_fixpoint(+Mx0, +N, +M, +Z, -Mx, -DidChange)
-% Iteratív szűkítés: mindig kiválasztunk egy egyelemű listát és propagálunk.
-% Ha nincs több egyelemű lista, visszaadjuk a jelenlegi mátrixot.
-propagate_until_fixpoint(Mx0, N, M, Z, Mx, DidChange) :-
-	find_singleton_cell(Mx0, R, C, E), !,
-	( E > 0 ->
-		propagate_fixed_positive(Mx0, R, C, E, Mx1)
-	  ; % E == 0
-		propagate_fixed_zero(Mx0, N, M, Z, R, C, Mx1)
-	),
-	( Mx1 == [] ->
-		Mx = [], DidChange = true
-	;
-		propagate_until_fixpoint(Mx1, N, M, Z, Mx, _),
-		DidChange = true
-	).
-propagate_until_fixpoint(Mx, _N, _M, _Z, Mx, false).
+%% propagate_until_fixpoint(+MatrixIn, +BoardSize, +CycleLength, +ZeroQuota, 
+%%                          -MatrixOut, -DidChange)
+%
+% Iteratív szűkítés: kiválaszt egy egyelemű listát és propagálja.
+% Ha nincs több egyelemű lista, visszaadja a mátrixot.
+%
+propagate_until_fixpoint(MatrixIn, BoardSize, CycleLength, ZeroQuota, MatrixOut, DidChange) :-
+    find_singleton_cell(MatrixIn, Row, Col, Value), !,
+    (   Value > 0
+    ->  propagate_fixed_positive(MatrixIn, Row, Col, Value, TempMatrix)
+    ;   propagate_fixed_zero(MatrixIn, BoardSize, CycleLength, ZeroQuota, Row, Col, TempMatrix)
+    ),
+    (   TempMatrix == []
+    ->  MatrixOut = [], DidChange = true
+    ;   propagate_until_fixpoint(TempMatrix, BoardSize, CycleLength, ZeroQuota, MatrixOut, _),
+        DidChange = true
+    ).
+propagate_until_fixpoint(Matrix, _BoardSize, _CycleLength, _ZeroQuota, Matrix, false).
 
 
 % Egyelemű lista keresése (balról-jobbra, fentről-lefelé)
