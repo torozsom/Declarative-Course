@@ -13,7 +13,7 @@ run_tests([]) :-
 	writeln('osszes teszt lefutott.'), !.
 run_tests([I-FL-Expected|Rest]) :-
 	writeln('Teszt '), write(I), writeln(' futtatasa...'),
-	findall(Mx, szamtekercs(FL, Mx), Solutions),
+	findall(Mx, tekercs(FL, Mx), Solutions),
 	(   same_solutions(Solutions, Expected)
 	->  writeln('  OK')
 	;   writeln('  HIBA!'),
@@ -30,4 +30,3 @@ same_solutions(S1, S2) :-
 
 
 :- initialization(run_all_tests).
-

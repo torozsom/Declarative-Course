@@ -24,7 +24,7 @@ tekercs(PuzzleDescriptor, Solution) :-
     kezdotabla(PuzzleDescriptor, InitialMatrix),
     PuzzleDescriptor = szt(BoardSize, CycleLength, GivenElements),
     spiral_positions(BoardSize, SpiralPositions),
-    % Kényszerített értékek listájának felépítése
+    % Kényszerített értékek térképének felépítése
     build_forced_map(GivenElements, SpiralPositions, ForcedValueMap),
     % Spirál-alapú DFS megoldó használata
     solve_spiral_dfs(PuzzleDescriptor, CycleLength, BoardSize, SpiralPositions, 
@@ -36,23 +36,38 @@ tekercs(PuzzleDescriptor, Solution) :-
 %% KÉNYSZERÍTETT ÉRTÉKEK TÉRKÉPE
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% build_forced_map(+GivenElements, +SpiralPositions, -ForcedValueList)
+%% build_forced_map(+GivenElements, +SpiralPositions, -ForcedValueMap)
 %
-% Felépít egy listát, amely a spirál indexekhez rendeli a kényszerített értékeket.
+% Felépít egy térképet (listát), amely a spirál indexekhez rendeli a kényszerített értékeket.
 % Ha egy pozícióra nincs megadott érték, akkor 0-t tárol.
+% A ForcedValueMap egy lista, ahol az I-edik elem a spirál I-edik pozíciójához tartozó
+% kényszerített érték (0 ha nincs megadva).
 %
-build_forced_map(GivenElements, SpiralPositions, ForcedValueList) :-
+build_forced_map(GivenElements, SpiralPositions, ForcedValueMap) :-
     length(SpiralPositions, TotalPositions),
-    length(EmptyForced, TotalPositions),
-    maplist(=(0), EmptyForced),
-    fill_forced_map(GivenElements, SpiralPositions, EmptyForced, ForcedValueList).
+    init_forced_map_list(TotalPositions, InitialMap),
+    fill_forced_map(GivenElements, SpiralPositions, InitialMap, ForcedValueMap).
 
-% Feltölti a listát az adott elemek értékeivel.
-fill_forced_map([], _, ForcedAcc, ForcedAcc).
-fill_forced_map([i(Row, Col, Value)|RestElements], SpiralPositions, ForcedIn, ForcedOut) :-
+% Inicializálja a kényszerített értékek térképét 0 értékekkel (lista).
+init_forced_map_list(0, []) :- !.
+init_forced_map_list(N, [0|Rest]) :-
+    N > 0,
+    N1 is N - 1,
+    init_forced_map_list(N1, Rest).
+
+% Feltölti a térképet az adott elemek értékeivel.
+fill_forced_map([], _, Map, Map).
+fill_forced_map([i(Row, Col, Value)|RestElements], SpiralPositions, MapIn, MapOut) :-
     spiral_index(SpiralPositions, Row, Col, 1, SpiralIndex),
-    set_nth1(ForcedIn, SpiralIndex, Value, ForcedNext),
-    fill_forced_map(RestElements, SpiralPositions, ForcedNext, ForcedOut).
+    set_list_element(MapIn, SpiralIndex, Value, TempMap),
+    fill_forced_map(RestElements, SpiralPositions, TempMap, MapOut).
+
+% Beállít egy elemet a listában az adott indexre (1-alapú).
+set_list_element([_|Rest], 1, Value, [Value|Rest]) :- !.
+set_list_element([H|Rest], Index, Value, [H|NewRest]) :-
+    Index > 1,
+    Index1 is Index - 1,
+    set_list_element(Rest, Index1, Value, NewRest).
 
 % Megkeresi egy (Row, Col) pozíció spirál-indexét.
 spiral_index([pos(Row, Col)|_], Row, Col, CurrentIndex, CurrentIndex) :- !.
@@ -108,7 +123,7 @@ dfs_spiral(CurrentIndex, PlacedCount, Matrix, SpiralPositions, ForcedValueMap,
     nth1(CurrentIndex, SpiralPositions, pos(Row, Col)),
     nth1(Row, Matrix, RowValues),
     nth1(Col, RowValues, CellDomain),
-    % Kényszerített érték lekérése (ha van)
+    % Kényszerített érték lekérése (ha van) - lista-alapú megoldás
     nth1(CurrentIndex, ForcedValueMap, ForcedValue),
     % A spirálban következő elvárt érték kiszámítása
     ExpectedNextValue is (PlacedCount mod CycleLength) + 1,
@@ -249,10 +264,28 @@ count_zeros_in_line_([Cell|RestCells], Accumulator, Count) :-
 % pontosan CycleLength pozitív szám szerepel.
 %
 check_row_col_counts(Matrix, BoardSize, CycleLength) :-
-    forall(between(1, BoardSize, RowIndex), 
-           (nth1(RowIndex, Matrix, Row), count_positive_in_line(Row, CycleLength))),
-    forall(between(1, BoardSize, ColIndex), 
-           (get_column_values(Matrix, ColIndex, Col), count_positive_in_line(Col, CycleLength))).
+    check_all_rows(Matrix, BoardSize, CycleLength, 1),
+    check_all_columns(Matrix, BoardSize, CycleLength, 1).
+
+% Ellenőrzi az összes sort.
+check_all_rows(_Matrix, BoardSize, _CycleLength, RowIndex) :-
+    RowIndex > BoardSize, !.
+check_all_rows(Matrix, BoardSize, CycleLength, RowIndex) :-
+    RowIndex =< BoardSize,
+    nth1(RowIndex, Matrix, Row),
+    count_positive_in_line(Row, CycleLength),
+    NextRowIndex is RowIndex + 1,
+    check_all_rows(Matrix, BoardSize, CycleLength, NextRowIndex).
+
+% Ellenőrzi az összes oszlopot.
+check_all_columns(_Matrix, BoardSize, _CycleLength, ColIndex) :-
+    ColIndex > BoardSize, !.
+check_all_columns(Matrix, BoardSize, CycleLength, ColIndex) :-
+    ColIndex =< BoardSize,
+    get_column_values(Matrix, ColIndex, Col),
+    count_positive_in_line(Col, CycleLength),
+    NextColIndex is ColIndex + 1,
+    check_all_columns(Matrix, BoardSize, CycleLength, NextColIndex).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
