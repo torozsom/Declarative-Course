@@ -15,43 +15,44 @@
 % szamtekercs(+Feladvany, -Megoldas)
 szamtekercs(FL, Megoldas) :-
     kezdotabla(FL, Matrix0),
-    FL = szt(_, Cycle, _),
-    solve_matrix(FL, Cycle, Matrix0, MatrixSolved),
+    FL = szt(N, Cycle, _),
+    spiral_positions(N, SpiralPos),
+    solve_matrix(FL, Cycle, SpiralPos, Matrix0, MatrixSolved),
     matrix_to_solution(MatrixSolved, Megoldas).
 
 
 
 % Rekurzív kereső: szűkít, majd visszalépéssel kitölti a táblát.
-% solve_matrix(+FL,+Cycle,+MatrixIn,-MatrixSolved)
-solve_matrix(_, _, [], _) :- !, fail.
-solve_matrix(FL, Cycle, MatrixIn, MatrixSolved) :-
-    propagate_all(FL, MatrixIn, Reduced),
+% solve_matrix(+FL,+Cycle,+SpiralPos,+MatrixIn,-MatrixSolved)
+solve_matrix(_, _, _, [], _) :- !, fail.
+solve_matrix(FL, Cycle, SpiralPos, MatrixIn, MatrixSolved) :-
+    propagate_all(FL, SpiralPos, MatrixIn, Reduced),
     Reduced \== [],
     (   solved_matrix(Reduced)
     ->  MatrixSolved = Reduced
-    ;   select_branch_cell_heuristic(Reduced, R, C, Domain),
-        domain_choice(Reduced, R, C, Domain, Cycle, Value),
+    ;   select_branch_cell_heuristic(Reduced, SpiralPos, R, C, Domain),
+        domain_choice_simple(Domain, Cycle, Value),
         set_cell(Reduced, R, C, [Value], NextMatrix),
-        solve_matrix(FL, Cycle, NextMatrix, MatrixSolved)
+        solve_matrix(FL, Cycle, SpiralPos, NextMatrix, MatrixSolved)
     ).
 
 
 % Szűkítések ismételt alkalmazása fixpontig.
-% propagate_all(+FL,+MatrixIn,-MatrixOut)
-propagate_all(_FL, [], []) :- !.
-propagate_all(FL, MatrixIn, MatrixOut) :-
-    (   apply_one_restriction(FL, MatrixIn, Temp)
+% propagate_all(+FL,+SpiralPos,+MatrixIn,-MatrixOut)
+propagate_all(_FL, _, [], []) :- !.
+propagate_all(FL, SpiralPos, MatrixIn, MatrixOut) :-
+    (   apply_one_restriction(FL, SpiralPos, MatrixIn, Temp)
     ->  (   Temp == []
         ->  MatrixOut = []
-        ;   propagate_all(FL, Temp, MatrixOut)
+        ;   propagate_all(FL, SpiralPos, Temp, MatrixOut)
         )
     ;   MatrixOut = MatrixIn
     ).
 
 
 % Egyetlen (ismert/kizárásos/spirál) szűkítés kipróbálása.
-% apply_one_restriction(+FL,+MatrixIn,-MatrixOut)
-apply_one_restriction(FL, MatrixIn, MatrixOut) :-
+% apply_one_restriction(+FL,+SpiralPos,+MatrixIn,-MatrixOut)
+apply_one_restriction(FL, SpiralPos, MatrixIn, MatrixOut) :-
     (   ismert_szukites(FL, MatrixIn, MatrixOut)
     ->  true
     ;   kizarasos_szukites(FL, MatrixIn, Temp, _Info),
@@ -60,18 +61,15 @@ apply_one_restriction(FL, MatrixIn, MatrixOut) :-
         ;   Temp \== MatrixIn,
             MatrixOut = Temp
         )
-    ;   mxtekercs_szukites(FL, MatrixIn, MatrixOut),
+    ;   mxtekercs_szukites(FL, SpiralPos, MatrixIn, MatrixOut),
         MatrixOut \== MatrixIn
     ).
 
 
 % Spirál-specifikus szűkítés a mátrixon.
-% mxtekercs_szukites(+FL,+MatrixIn,-MatrixOut)
-mxtekercs_szukites(FL, MatrixIn, MatrixOut) :-
+% mxtekercs_szukites(+FL,+Positions,+MatrixIn,-MatrixOut)
+mxtekercs_szukites(FL, Positions, MatrixIn, MatrixOut) :-
     MatrixIn \== [],
-    length(MatrixIn, N),
-    N > 0,
-    spiral_positions(N, Positions),
     extract_spiral(MatrixIn, Positions, Spiral),
     (   apply_spiral_passes(FL, Spiral, Narrowed)
     ->  (   Narrowed == Spiral
@@ -93,13 +91,12 @@ spiral_fixpoint(FL, SpiralIn, SpiralOut) :-
     spiral_fixpoint_iter(FL, SpiralIn, 0, SpiralOut).
 
 spiral_fixpoint_iter(_FL, SpiralIn, MaxIter, SpiralIn) :-
-    MaxIter >= 5, !.
+    MaxIter >= 20, !.
 spiral_fixpoint_iter(FL, SpiralIn, Iter, SpiralOut) :-
     tekercs_szukites(FL, SpiralIn, SpiralForward),
-    reverse(SpiralIn, RevIn),
+    reverse(SpiralForward, RevIn),
     tekercs_szukites_backward(FL, RevIn, RevNarrowed),
-    reverse(RevNarrowed, SpiralBackward),
-    intersect_spiral_domains(SpiralForward, SpiralBackward, Combined),
+    reverse(RevNarrowed, Combined),
     (   Combined == SpiralIn
     ->  SpiralOut = Combined
     ;   NextIter is Iter + 1,
@@ -247,69 +244,22 @@ cell_finalized(Cell) :- integer(Cell), !.
 cell_finalized([_]).
 
 
-% Heurisztikus választás a cella domainjéből (pozitív előnyben, különben 0).
-domain_choice(Matrix, R, C, Domain, Cycle, Value) :-
+% Egyszerűsített heurisztikus választás a cella domainjéből
+% Először 0-t próbál, utána pozitív értékeket
+domain_choice_simple(Domain, _Cycle, 0) :-
+    member(0, Domain).
+domain_choice_simple(Domain, _Cycle, Value) :-
     include(pos_value, Domain, Positives),
     Positives \= [],
-    length(Matrix, N),
-    spiral_positions(N, Positions),
-    count_spiral_positive_before(Positions, Matrix, R, C, Count),
-    ExpectedRem is Count mod Cycle,
-    ExpectedValue is ExpectedRem + 1,
-    % Try expected value first, then others
-    (   member(ExpectedValue, Positives),
-        Value = ExpectedValue
-    ;   member(Value, Positives),
-        Value \= ExpectedValue
-    ).
-domain_choice(Matrix, R, C, Domain, Cycle, 0) :-
-    member(0, Domain),
-    % Simple check: ensure row and column have space for zeros
-    catch((
-        nth1(R, Matrix, Row),
-        get_column_values(Matrix, C, Column),
-        count_actual_zeros(Row, RowZeros),
-        count_actual_zeros(Column, ColZeros),
-        length(Row, RowLen),
-        ZeroQuota is RowLen - Cycle,
-        RowZeros < ZeroQuota,
-        ColZeros < ZeroQuota
-    ), _, true).
-
-% Count positive values before position (R,C) in spiral
-count_spiral_positive_before([], _, _, _, 0).
-count_spiral_positive_before([pos(R,C)|_], _Matrix, R, C, 0) :- !.
-count_spiral_positive_before([pos(Ri,Ci)|Rest], Matrix, R, C, Count) :-
-    nth1(Ri, Matrix, Row),
-    nth1(Ci, Row, Cell),
-    (   (integer(Cell), Cell > 0)
-    ->  count_spiral_positive_before(Rest, Matrix, R, C, RestCount),
-        Count is RestCount + 1
-    ;   (is_list(Cell), Cell = [V], V > 0)
-    ->  count_spiral_positive_before(Rest, Matrix, R, C, RestCount),
-        Count is RestCount + 1
-    ;   count_spiral_positive_before(Rest, Matrix, R, C, Count)
-    ).
-
-count_actual_zeros([], 0) :- !.
-count_actual_zeros([Cell|Rest], Count) :-
-    count_actual_zeros(Rest, RestCount),
-    (   (integer(Cell), Cell =:= 0)
-    ->  Count is RestCount + 1
-    ;   (is_list(Cell), Cell = [0])
-    ->  Count is RestCount + 1
-    ;   Count = RestCount
-    ), !.
+    member(Value, Positives).
 
 
 % Pozitív jelölt (0 kizárva).
 pos_value(V) :- V > 0.
 
 
-select_branch_cell_heuristic(Matrix, R, C, Domain) :-
-    length(Matrix, N),
-    spiral_positions(N, Positions),
-    select_min_domain_cell_fast(Matrix, Positions, R, C, Domain).
+select_branch_cell_heuristic(Matrix, SpiralPos, R, C, Domain) :-
+    select_min_domain_cell_fast(Matrix, SpiralPos, R, C, Domain).
 
 
 select_min_domain_cell_fast(Matrix, Positions, R, C, Domain) :-
