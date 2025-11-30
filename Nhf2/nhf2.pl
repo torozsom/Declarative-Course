@@ -991,13 +991,13 @@ set_cell(Mx0, R, C, Value, Mx) :-
 % ------------------------------------------------------------
 
 
-:- use_module(library(lists)).
-
-
-% kizarasos_szukites/4: Egy kizárásos szűkítési lépést hajt végre sorokra majd oszlopokra vizsgálva.
+%% kizarasos_szukites(+PuzzleDescriptor, +MatrixIn, -MatrixOut, -RestrictionInfo)
+%
+% Egy kizárásos szűkítési lépést hajt végre sorokra majd oszlopokra vizsgálva.
+%
 kizarasos_szukites(szt(BoardSize, CycleMax, _), MatrixIn, MatrixOut, Restriction) :-
-		ZeroQuota is BoardSize - CycleMax,
-		% 1) Sorok vizsgálata növekvő sorszám szerint, Value = 0..CycleMax
+        ZeroQuota is BoardSize - CycleMax,
+        % 1) Sorok vizsgálata növekvő sorszám szerint, Value = 0..CycleMax
 		( find_row_restriction_choice(MatrixIn, BoardSize, CycleMax, ZeroQuota,
 																	RowIndex, Value, ChoiceAction) ->
 				apply_row_restriction_choice(MatrixIn, RowIndex, Value, ChoiceAction, MatrixOut, Restriction)
