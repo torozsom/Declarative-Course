@@ -629,7 +629,7 @@ collect_left_edge(StartRow, EndRow, Col, [pos(StartRow, Col)|RestPositions]) :-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% KEZDŐ TÁBLA ÉS ISMERT SZŰKÍTÉS (KHF5 alapján)
+%% KEZDŐ TÁBLA ÉS ISMERT SZŰKÍTÉS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% kezdotabla(+PuzzleDescriptor, -Matrix)
@@ -1002,13 +1002,6 @@ set_cell(Mx0, R, C, Value, Mx) :-
 	nth1(R, Mx0, Row, RestRows),
 	set_nth1(Row, C, Value, NewRow),
 	set_matrix_row_at_index(RestRows, R, NewRow, Mx).
-% ---- Beépített Khf6 kód ----
-% ------------------------------------------------------------
-% Khf6 – Számtekercs: kizárásos szűkítés
-%
-% @author "Toronyi Zsombor <toronyizsombor@edu.bme.hu> [S8F7DV]"
-% @date   "2025-11-19" 
-% ------------------------------------------------------------
 
 
 %% kizarasos_szukites(+PuzzleDescriptor, +MatrixIn, -MatrixOut, -RestrictionInfo)
